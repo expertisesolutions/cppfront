@@ -374,9 +374,14 @@ auto expand_string_literal(
     ++pos;
     auto current_start = pos;   // the current offset before which the string has been added to ret
 
-    auto parts = string_parts{std::string(text.substr(0, current_start)), // begin sequence ", U", u8" depends on the string type 
+    auto begin_seq = std::string(text.substr(0, current_start));
+    auto parts = string_parts{begin_seq, // begin sequence ", U", u8" depends on the string type 
                               "\"", // end sequence
                               string_parts::on_both_ends}; // add opening and closing sequence to generated string
+
+    if (begin_seq == "M") {
+        /// TODO: right here the match object
+    }
 
     bool escape = false;
     //  Now we're on the first character of the string itself
@@ -1083,7 +1088,7 @@ auto lex_line(
         auto peek3 = peek(3);
 
         //G encoding-prefix: one of
-        //G     'u8' 'u' 'uR' 'u8R' 'U' 'UR' 'L' 'LR' 'R' 
+        //G     'u8' 'u' 'uR' 'u8R' 'U' 'UR' 'L' 'LR' 'R' 'M'
         //G
         auto is_encoding_prefix_and = [&](char next) {
             if (line[i] == next)                                        { return 1; } // "
@@ -1102,6 +1107,7 @@ auto lex_line(
                 else if (peek1 == 'R' && peek2 == next)                 { return 3; } // LR" 
             } 
             else if (line[i] == 'R' && peek1 == next)                   { return 2; } // R"
+            else if (line[i] == 'M' && peek1 == next)                   { return 2; } // M"
             return 0;
         };
 
