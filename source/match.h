@@ -4,6 +4,7 @@
 #include "cpp2util.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <map>
 #include <optional>
 #include <regex>
@@ -103,7 +104,7 @@ auto find_closing_paren(std::string_view sv)
     -> size_t
 {
     const auto open_close_paren_map = std::map<char, char>{
-        {'(', ')'}, {'[', ']'}, {'{', '}'}
+        {'(', ')'}, {'[', ']'}, {'{', '}'}, {'"', '"'}
     };
     const auto open_paren = sv[0];
     assert (open_close_paren_map.contains(open_paren));
@@ -122,6 +123,66 @@ auto find_closing_paren(std::string_view sv)
     }
 
     return std::string_view::npos;
+}
+
+auto parse_literal_list(std::string_view sv)
+    -> decltype(match_generator::node::attrs) {
+    /// On this first version, only lists of literals will be allowed
+    // Ex1: "stuff", 1, 1.5, true
+    /// TODO: should we allow trailing comma?
+    using attrs_type = decltype(match_generator::node::attrs);
+
+    auto i = 0;
+    const auto size = std::ssize(sv);
+    auto attrs = attrs_type{};
+
+    auto skip_to_next_non_white_char = [sv, size, &i]() -> void {
+        while (sv[i] == ' ' && i < size) ++i;
+    };
+
+    auto peek = [sv, size, &i](int num) -> char {
+        return
+            (i + num < sv.size() && i + num >= 0)
+            ? sv[i + num]
+            : '\0';
+    };
+
+    for (; i < size; ++i) {
+        skip_to_next_non_white_char();
+        if (i == size - 1) {
+            break;
+        }
+        const auto ch = sv[i];
+
+        if (ch == '"') {
+            // string literal
+            const auto end_quote = find_closing_paren(sv.substr(i));
+            if (end_quote != std::string_view::npos) {
+
+            } else {
+                /// TODO: could not find end quote, report error
+            }
+        } else if (isdigit(ch)) {
+            // double or long literal
+        } else if (ch == 't' || ch == 'f') {
+            // boolean literal
+            const auto peek1 = peek(1);
+            const auto peek2 = peek(2);
+            const auto peek3 = peek(3);
+            const auto peek4 = peek(4);
+
+            if (peek1 == 'r' && peek2 == 'u' && peek3 == 'e') {
+                // true
+            } else if (peek1 == 'a' && peek2 == 'l' && peek3 == 's' && peek4 == 'e') {
+                // false
+            }
+        } else if (ch == ','){
+            // rest of the stuff here
+            ++i;
+        }
+    }
+
+    return {};
 }
 
 auto parse_node(std::string_view sv_node)
