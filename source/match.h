@@ -2,9 +2,11 @@
 #define __CPP2_MATCH
 
 #include "cpp2util.h"
+#include "lex.h"
 
 #include <assert.h>
 #include <ctype.h>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <regex>
@@ -43,10 +45,7 @@ struct match_generator {
         std::vector<
             std::variant<
                 std::monostate,
-                long,
-                double,
-                bool,
-                std::string
+                token
             >
         > attrs;
 
@@ -64,6 +63,8 @@ struct match_generator {
     std::string literal;
     std::vector<std::string_view> node_views = {};
     std::vector<node> nodes = {};
+    /// WARNING: the following must be replaced by a reference
+    std::vector<error_entry> errors = {};
 
     match_generator(const std::string &str)
         : literal{str}
@@ -72,9 +73,7 @@ struct match_generator {
     }
 
 private:
-    void parse_nodes() {
-
-    }
+    void parse_nodes();
 
     void get_nodes() {
         // constexpr auto open_parens = std::array{'(', '[', '{'};
@@ -96,6 +95,7 @@ private:
 
     void parse() {
         get_nodes();
+        parse_nodes();
     }
 
 };
@@ -125,81 +125,111 @@ auto find_closing_paren(std::string_view sv)
     return std::string_view::npos;
 }
 
-auto parse_literal_list(std::string_view sv)
-    -> decltype(match_generator::node::attrs) {
-    /// On this first version, only lists of literals will be allowed
-    // Ex1: "stuff", 1, 1.5, true
-    /// TODO: should we allow trailing comma?
+auto parse_attr_list(
+    std::string_view sv,
+    std::vector<error_entry> &errors
+)
+    -> decltype(match_generator::node::attrs)
+{
     using attrs_type = decltype(match_generator::node::attrs);
-
-    auto i = 0;
-    const auto size = std::ssize(sv);
     auto attrs = attrs_type{};
 
-    auto skip_to_next_non_white_char = [sv, size, &i]() -> void {
-        while (sv[i] == ' ' && i < size) ++i;
-    };
+    std::cout << "parse_attr_list(): sv " << sv << std::endl;
 
-    auto peek = [sv, size, &i](int num) -> char {
-        return
-            (i + num < sv.size() && i + num >= 0)
-            ? sv[i + num]
-            : '\0';
-    };
+    /// TODO: make var "line" persistent
+    auto line = std::string{sv}, curr_comment = std::string{};
+    auto in_comment = false;
+    auto comment_pos = source_position{};
+    auto tokens = std::vector<token>{};
+    auto comments = std::vector<comment>{};
+    // auto errors = std::vector<error_entry>{};
+    auto rsm = std::optional<raw_string>{};
 
-    for (; i < size; ++i) {
-        skip_to_next_non_white_char();
-        if (i == size - 1) {
-            break;
+    lex_line(line, 1, in_comment, curr_comment, comment_pos, tokens,
+             comments, errors, rsm);
+
+    // if (
+    //     tokens.front().type() != lexeme::LeftBrace ||
+    //     tokens.back().type() != lexeme::RightBrace
+    // ) {
+    //     /// TODO: emmit error message
+    // }
+    // Every token in-between should be alternating literal/identifier
+    // and comma. Should we allow for trailing commas?
+    auto it = tokens.cbegin();
+    const auto it_end = tokens.cend();
+    auto next_must_be_comma = false;
+    for (; it != it_end; ++it, next_must_be_comma = !next_must_be_comma) {
+        const auto type = it->type();
+        if (!next_must_be_comma) {
+            if (!is_literal(type) || type != lexeme::Identifier) {
+                errors.push_back(
+                    {   
+                        source_position{-1, -1},
+                        "Attribute should be wither a literal or identifier"
+                    }
+                );
+            }
+
+            attrs.push_back({*it});
+        } else {
+            if (type != lexeme::Comma) {
+                errors.push_back(
+                    {
+                        source_position{-1, -1},
+                        "There should be a comma after a literal or identifier list"
+                    }
+                );
+            }
         }
-        const auto ch = sv[i];
+    }
 
-        if (ch == '"') {
-            // string literal
-            const auto end_quote = find_closing_paren(sv.substr(i));
-            if (end_quote != std::string_view::npos) {
+    return attrs;
+error:
+    return {};
+}
 
-            } else {
-                /// TODO: could not find end quote, report error
-            }
-        } else if (isdigit(ch)) {
-            // double or long literal
-        } else if (ch == 't' || ch == 'f') {
-            // boolean literal
-            const auto peek1 = peek(1);
-            const auto peek2 = peek(2);
-            const auto peek3 = peek(3);
-            const auto peek4 = peek(4);
+auto parse_node(
+    std::string_view sv_node,
+    std::vector<error_entry> &errors
+)
+    -> match_generator::node
+{   
+    using attrs_type = decltype(match_generator::node::attrs);
+    // const auto str_node = std::string{sv_node};
+    const auto node_pat = std::regex{"^\\(([a-zA-Z_]\\w*)(:\\{(.*)\\})?\\)$"};
+    constexpr auto label_regex_idx = 1;
+    constexpr auto attr_regex_idx = 3;
+    auto match = std::cmatch{};
 
-            if (peek1 == 'r' && peek2 == 'u' && peek3 == 'e') {
-                // true
-            } else if (peek1 == 'a' && peek2 == 'l' && peek3 == 's' && peek4 == 'e') {
-                // false
-            }
-        } else if (ch == ','){
-            // rest of the stuff here
-            ++i;
+    if (std::regex_search(sv_node.cbegin(), sv_node.cend(), match, node_pat)) {
+        for (auto i = 0; i < match.size(); ++i) {
+            std::cout << "match " << i << " " << match[i].str() << std::endl;
+        }
+        if (match.size() >= 4) {
+            return {
+                match[label_regex_idx].str(),
+                parse_attr_list(
+                    sv_node.substr(
+                        match.position(attr_regex_idx),
+                        match.length(attr_regex_idx)
+                    ),
+                    errors
+                )
+            };
+        } else {
+            return {match[1].str()};
         }
     }
 
     return {};
 }
 
-auto parse_node(std::string_view sv_node)
-    -> match_generator::node
-{   
-    const auto str_node = std::string{sv_node};
-    const auto node_pat = std::regex{"^\\(([a-zA-Z_]\\w*)(:\\{(.*)\\})\\)?$"};
-    auto match = std::smatch{};
-
-    if (std::regex_search(str_node, match, node_pat)) {
-        // for (auto i = 0; i < match.size(); ++i) {
-        //     std::cout << "match " << match[i].str() << std::endl;
-        // }
-        return {match[1].str()};
+void match_generator::parse_nodes()
+{
+    for (const auto &nv : node_views) {
+        nodes.push_back(parse_node(nv, errors));
     }
-
-    return {};
 }
 
 }
