@@ -136,7 +136,6 @@ auto parse_attr_list(
 
     std::cout << "parse_attr_list(): sv " << sv << std::endl;
 
-    /// TODO: make var "line" persistent
     auto line = std::string{sv}, curr_comment = std::string{};
     auto in_comment = false;
     auto comment_pos = source_position{};
@@ -148,12 +147,21 @@ auto parse_attr_list(
     lex_line(line, 1, in_comment, curr_comment, comment_pos, tokens,
              comments, errors, rsm);
 
-    // if (
-    //     tokens.front().type() != lexeme::LeftBrace ||
-    //     tokens.back().type() != lexeme::RightBrace
-    // ) {
-    //     /// TODO: emmit error message
-    // }
+    if (line != sv) {
+        /// TODO: if string was changed, deal with that
+        std::cout << "line " << line << ", sv " << sv << std::endl;
+    } else {
+        // token string view must point to persistent string view
+        for (auto &t : tokens) {
+            t = token{
+                sv.data() + (t.as_string_view().data() - line.data()),
+                t.length(),
+                t.position(),
+                t.type()
+            };
+        }   
+    }
+
     // Every token in-between should be alternating literal/identifier
     // and comma. Should we allow for trailing commas?
     auto it = tokens.cbegin();
