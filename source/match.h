@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -36,7 +37,7 @@ size_t find_closing_paren(std::string_view);
 struct match_generator {
     constexpr static auto arrow_lexeme = std::string_view{"->"};
     constexpr static auto or_lexeme = std::string_view{"|"};
-    constexpr static auto and_lexeme = std::string_view{"&"};
+    constexpr static auto and_lexeme = std::string_view{";"};
     constexpr static auto node_lexeme = std::string_view{"()"};
     constexpr static auto node_attr_lexeme = std::string_view{"{}"};
 
@@ -48,6 +49,7 @@ struct match_generator {
                 token
             >
         > attrs;
+        std::vector<node*> adj_nodes;
 
         node() = default;
 
@@ -61,9 +63,22 @@ struct match_generator {
     };
 
     std::string literal;
-    std::vector<std::string_view> node_views = {};
-    std::vector<node> nodes = {};
-    /// WARNING: the following must be replaced by a reference
+    std::vector<std::string> parts = {};
+    std::vector<
+        std::tuple<
+            std::string_view,
+            const std::string*
+        >
+    > node_views = {};
+    std::vector<
+        std::tuple<
+            node,
+            std::string_view,
+            const std::string*
+        >
+    > nodes = {};
+    /// TODO: the following must be replaced by a non-const reference
+    /// (or non-const pointer)
     std::vector<error_entry> errors = {};
 
     match_generator(const std::string &str)
@@ -75,15 +90,22 @@ struct match_generator {
 private:
     void parse_nodes();
 
+    void parse_relations();
+
     void get_nodes() {
         // constexpr auto open_parens = std::array{'(', '[', '{'};
-        for (size_t i = 0, size = literal.size(); i < size; ++i) {
-            const auto ch = literal[i];
-            if (ch == '(') {
-                const auto *str_data = literal.c_str() + i;
-                if (const auto closing_paren_idx = find_closing_paren({str_data, size - i});
-                    closing_paren_idx != std::string_view::npos) {
-                    node_views.push_back({str_data, closing_paren_idx + 1});
+        for (const auto &part : parts) {
+            for (size_t i = 0, size = part.size(); i < size; ++i) {
+                if (const auto ch = part[i];
+                    ch == node_lexeme[0]) {
+                    const auto *str_data = part.c_str() + i;
+                    if (const auto closing_paren_idx = find_closing_paren({str_data, size - i});
+                        closing_paren_idx != std::string_view::npos) {
+                        node_views.push_back({
+                            {str_data, closing_paren_idx + 1},
+                            &part
+                        });
+                    }
                 }
             }
         }
@@ -93,9 +115,20 @@ private:
         // }
     }
 
+    void get_parts() {
+        auto ss = std::stringstream{literal};
+        auto part = std::string{};
+
+        while (std::getline(ss, part, and_lexeme[0])) {
+            parts.push_back(part);
+        }
+    }
+
     void parse() {
+        get_parts();
         get_nodes();
         parse_nodes();
+        parse_relations();
     }
 
 };
@@ -235,8 +268,68 @@ auto parse_node(
 
 void match_generator::parse_nodes()
 {
-    for (const auto &nv : node_views) {
-        nodes.push_back(parse_node(nv, errors));
+    for (const auto &[nv, str] : node_views) {
+        nodes.push_back({
+            parse_node(nv, errors),
+            nv,
+            str
+        });
+    }
+}
+
+void match_generator::parse_relations()
+{
+    // struct cmp_string_view {
+    //     auto operator()(std::string_view lhs, std::string_view rhs) const
+    //         -> bool {
+    //         return lhs.data() < rhs.data();
+    //     }
+    // };
+    auto parts_view_node_map = std::map<
+        const std::string*,
+        std::vector<
+            std::tuple<
+                node*,
+                std::string_view
+            >
+        >
+    >{};
+    for (auto &[node, nv, str] : nodes) {
+        parts_view_node_map[str].push_back({&node, nv});
+    }
+
+    // checking whether the nodes in the parts are linked by arrow lexeme
+    for (const auto &[str, nodes] : parts_view_node_map) {
+        auto oss = std::ostringstream{};
+        auto sep = std::string_view{""};
+        std::cout << "*str " << *str << " nodes " << std::endl;
+        for (
+            auto it = nodes.begin(), it_end = nodes.end();
+            it != it_end;
+            ++it
+        ) {
+            auto *node = std::get<0>(*it);
+            const auto nv = std::get<1>(*it);
+            // std::cout << "\t" << *(node->label) << std::endl;
+            std::cout << "\t" << nv << std::endl;
+            if (
+                const auto next_it = std::next(it);
+                next_it != it_end
+            ) {
+                node->adj_nodes.push_back(std::get<0>(*next_it));
+            }
+            oss << sep << nv;
+            sep = arrow_lexeme;
+        }
+        if (*str != oss.str()) {
+            errors.push_back(
+                {
+                    source_position{-1, -1},
+                    "Link between nodes should be an arrow (`->`)"
+                }
+            );
+            return;
+        }
     }
 }
 
