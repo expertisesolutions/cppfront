@@ -335,4 +335,55 @@ void match_generator::parse_relations()
 
 }
 
+
+namespace cpp2::bounded_simulation {
+
+struct trivial_predicate {
+    bool operator()(auto &&) {
+        return true;
+    }
+};
+
+// void test()
+// {
+//     constexpr auto value = std::convertible_to<
+//         decltype(std::declval<trivial_predicate>()(
+//             std::declval<int>()
+//         )),
+//         bool
+//     >;
+// }
+
+template<
+    typename v_type = int,
+    typename attrs_type = std::tuple<>,
+    typename predicate_type = trivial_predicate
+>
+    requires (
+        requires { std::hash<v_type>(); }
+        && requires (attrs_type at) {
+            std::get<0>(at);
+            std::size(at);
+        }
+        && requires (predicate_type pred, attrs_type at) {
+            pred(at);
+        }
+        && std::convertible_to<
+            decltype(std::declval<predicate_type>()(
+                std::declval<attrs_type>()
+            )),
+            bool
+        >
+    )
+struct pattern {
+    // using v_type = int;
+    using e_type = std::pair<v_type, v_type>;
+    using node_type = std::tuple<v_type, std::vector<v_type>, attrs_type>;
+    using adjacency_list_type = decltype(std::get<1>(std::declval<node_type>()));
+
+    std::vector<node_type> nodes;
+};
+
+}
+
 #endif
