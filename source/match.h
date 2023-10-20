@@ -339,7 +339,7 @@ void match_generator::parse_relations()
 namespace cpp2::bounded_simulation {
 
 struct trivial_predicate {
-    bool operator()(auto &&) {
+    bool operator()(auto &&) const {
         return true;
     }
 };
@@ -356,14 +356,13 @@ struct trivial_predicate {
 
 template<
     typename v_type = int,
-    typename attrs_type = std::tuple<>,
+    typename attrs_type = std::tuple<void*>,
     typename predicate_type = trivial_predicate
 >
     requires (
-        requires { std::hash<v_type>(); }
+        std::is_integral_v<v_type>
         && requires (attrs_type at) {
             std::get<0>(at);
-            std::size(at);
         }
         && requires (predicate_type pred, attrs_type at) {
             pred(at);
@@ -378,11 +377,64 @@ template<
 struct pattern {
     // using v_type = int;
     using e_type = std::pair<v_type, v_type>;
-    using node_type = std::tuple<v_type, std::vector<v_type>, attrs_type>;
+    using edge_value_type = std::optional<int>;
+    using node_type = std::tuple<
+        // value of the node
+        v_type,
+        // adjacency list with the specified (optional) value (f_E)
+        std::vector<v_type>,
+        // preficate object for the current node (f_V)
+        predicate_type
+    >;
     using adjacency_list_type = decltype(std::get<1>(std::declval<node_type>()));
 
+private:
     std::vector<node_type> nodes;
+    std::unordered_map<e_type, edge_value_type> edges_map;
 };
+
+template <typename vt, typename at, typename pt>
+auto get_node_value(
+    typename pattern<vt, at, pt>::node_type const &pat_node
+)
+    -> vt
+{
+    return std::get<0>(node);
+}
+
+template <typename vt, typename at, typename pt>
+auto get_node_predicate(
+    typename pattern<vt, at, pt>::node_type const &pat_node
+)
+    -> pt
+{
+    return std::get<2>(node);
+}
+
+template <typename vt, typename at, typename pt>
+auto get_edge_value(
+    pattern<vt, at, pt> const &pat,
+    typename pattern<vt, at, pt>::e_type edge
+)
+    -> typename pattern<vt, at, pt>::edge_value_type
+{
+    if (
+        const auto edge_it = pat.edges_map.find(edge);
+        edge_it != pat.edges_map.end()
+    )
+        return edge_it->second;
+    return {};
+}
+
+template <typename vt, typename at, typename pt>
+auto match(
+    auto &&node,
+    typename pattern<vt, at, pt>::node_type const &pat_node
+)
+    -> bool
+{
+    return std::get<2>(pat_node)(node);
+}
 
 }
 
