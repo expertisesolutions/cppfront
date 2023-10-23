@@ -9,9 +9,11 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <queue>
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stack>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -518,6 +520,12 @@ struct graph {
         return nodes[vertex];
     }
 
+    auto get_size() const
+        -> size_t
+    {
+        return nodes.size();
+    }
+
     auto add_vertex(const attrs_type &attr)
         -> bool
     {
@@ -616,6 +624,70 @@ auto match(
     return std::get<2>(pat_node)(node);
 }
 
+enum class walk_type : std::uint8_t { bfs, dfs };
+template <walk_type wt, typename at>
+auto search(const graph<at> &g, typename graph<at>::v_type source)
+    -> std::vector<std::optional<typename graph<at>::v_type>>
+{
+    using v_type = typename graph<at>::v_type;
+    auto next_nodes = std::conditional_t<
+        wt == walk_type::bfs,
+        std::queue<v_type>,
+        std::conditional_t<
+            wt == walk_type::dfs,
+            std::stack<v_type>,
+            // should fail if wt is something else entirely
+            void
+        >
+    >{};
+    const auto graph_size = g.get_size();
+    auto parent = std::vector<std::optional<v_type>>(graph_size, std::nullopt);
+    auto visited = std::vector<bool>(graph_size, false);
+
+    auto push = [&next_nodes](auto &&elem) {
+        next_nodes.push(elem);
+    };
+
+    auto pop = [&next_nodes]() {
+        auto pop = v_type{};
+        if constexpr (wt == walk_type::bfs) {
+            pop = next_nodes.front();
+        } else if constexpr (wt == walk_type::dfs) {
+            pop = next_nodes.top();
+        } else {
+            static_assert (
+                (wt == walk_type::bfs) ||
+                (wt == walk_type::dfs) ||
+                !"It is something else entirely"
+            );
+        }
+        next_nodes.pop();
+
+        return pop;
+    };
+
+    push(source);
+    /// TODO: should source be its own parent?
+    // parent[source] = {source};
+    visited[source] = true;
+
+    while (!next_nodes.empty()) {
+        const auto v = pop();
+        const auto &curr_node = g.get_node(v);
+        const auto &adj_list = std::get<0>(curr_node);
+
+        for (const auto adj : adj_list) {
+            if (!visited[adj]) {
+                parent[adj] = {v};
+                visited[adj] = true;
+                push(adj);
+            }
+        }
+    }
+
+    return parent;
+}
+
 template <typename at, typename pt>
 auto is_bounded_simulation_match(
     const relation<
@@ -644,6 +716,12 @@ auto is_bounded_simulation_match(
 
     const auto &pat_edges = pat.get_edges();
     for (const auto [pat_edge, pat_edge_value] : pat_edges) {
+        /// For each edge (u, u') in the pattern, there must be a path
+        /// v, ..., v' such that (u', v') is in the realtion and the path
+        /// length is bounded by the pattern edge value, if present, and
+        /// unbounded otherwise. In other words, each edge in the pattern
+        /// is mapped to a path (bounded or not) in the graph.
+
         // u, u'
         const auto [u, u_prime] = pat_edge;
         // v, v'
@@ -654,7 +732,14 @@ auto is_bounded_simulation_match(
             const auto v = it->second;
             for (auto it2 = v_prime_range.first; it2 != v_prime_range.second; ++it2) {
                 const auto v_prime = it2->second;
-                if (pat_edge_value) {
+
+                // check whether there is a path from v to v' and its distance
+                const auto parent = search<walk_type::bfs>(grp, v);
+                if (parent[v_prime]) {
+                    if (pat_edge_value) {
+
+                    }
+                } else {
 
                 }
             }
