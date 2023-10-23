@@ -392,17 +392,36 @@ struct pattern {
     pattern() = delete;
 
     pattern(size_t N, const predicate_type &pt) {
-        for (size_t i = {}; i < N; ++i) {
-            nodes.push_back({ i, {}, pt });
+        nodes.reserve(N);
+
+        for (size_t i{}; i < N; ++i) {
+            nodes.emplace_back(i, std::vector<v_type>{}, pt);
         }
     }
 
     pattern(size_t N, const std::vector<predicate_type> &pt) {
         assert (pt.size() >= N);
+        nodes.reserve(N);
 
-        for (size_t i = {}; i < N; ++i) {
-            nodes.push_back({ i, {}, pt[i] });
+        for (size_t i{}; i < N; ++i) {
+            nodes.emplace_back(i, std::vector<v_type>{}, pt[i]);
         }
+    }
+
+    auto add_edge(const e_type &edge, const edge_value_type &value = {})
+        -> bool
+    {
+        const auto [source, sink] = edge;
+        if (source >= nodes.size() || sink >= nodes.size()) {
+            return false;
+        }
+
+        /// TODO: check whether it already exists and insert sorted
+        /// rather than pushing back
+        std::get<1>(nodes[source]).push_back(sink);
+        edges_map.insert({edge, value});
+
+        return true;
     }
 private:
     std::vector<node_type> nodes;
@@ -425,6 +444,45 @@ struct graph {
     >;
     using adjacency_list_type = decltype(std::get<0>(std::declval<node_type>()));
     using path_type = std::vector<v_type>;
+
+    graph() = delete;
+
+    graph(size_t N)
+        requires (std::is_trivially_constructible_v<attrs_type>)
+        : nodes(N)
+    { }
+
+    graph(size_t N, const std::vector<attrs_type> &attrs) {
+        assert (attrs.size() >= N);
+        nodes.reserve(N);
+
+        for (size_t i{}; i < N; ++i) {
+            nodes.emplace_back(std::vector<v_type>{}, attrs[i]);
+        }
+    }
+
+    auto add_vertex(const attrs_type &attr)
+        -> bool
+    {
+        nodes.emplace_back(std::vector<v_type>{}, attr);
+
+        return true;
+    }
+
+    auto add_edge(const e_type &edge)
+        -> bool
+    {
+        const auto [source, sink] = edge;
+        if (source >= nodes.size() || sink >= nodes.size()) {
+            return false;
+        }
+
+        /// TODO: check whether it already exists and insert sorted
+        /// rather than pushing back
+        std::get<0>(nodes[source]).push_back(sink);
+
+        return true;
+    }
 
     auto is_valid_path(const path_type &path) const {
         assert (path.size() >= 2);
