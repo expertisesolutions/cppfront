@@ -355,27 +355,30 @@ struct trivial_predicate {
 // }
 
 template<
-    typename v_type = int,
-    typename attrs_type = std::tuple<void*>,
-    typename predicate_type = trivial_predicate
+    typename v_type_ = int,
+    typename attrs_type_ = std::tuple<std::any>,
+    typename predicate_type_ = trivial_predicate
 >
     requires (
-        std::is_integral_v<v_type>
-        && requires (attrs_type at) {
+        std::is_integral_v<v_type_>
+        && requires (attrs_type_ at) {
             std::get<0>(at);
         }
-        && requires (predicate_type pred, attrs_type at) {
+        && requires (predicate_type_ pred, attrs_type_ at) {
             pred(at);
         }
         && std::convertible_to<
-            decltype(std::declval<predicate_type>()(
-                std::declval<attrs_type>()
+            decltype(std::declval<predicate_type_>()(
+                std::declval<attrs_type_>()
             )),
             bool
         >
     )
 struct pattern {
     // using v_type = int;
+    using v_type = v_type_;
+    using attrs_type = attrs_type_;
+    using predicate_type = predicate_type_;
     using e_type = std::pair<v_type, v_type>;
     using edge_value_type = std::optional<int>;
     using node_type = std::tuple<
@@ -393,13 +396,62 @@ private:
     std::unordered_map<e_type, edge_value_type> edges_map;
 };
 
+template<typename attrs_type_ = typename pattern<>::attrs_type>
+    requires (
+        requires (attrs_type_ at) {
+            std::get<0>(at);
+        }
+    )
+struct graph {
+    using attrs_type = attrs_type_;
+    using v_type = int;
+    using e_type = std::pair<v_type, v_type>;
+    using node_type = std::tuple<
+        std::vector<v_type>,
+        attrs_type
+    >;
+    using adjacency_list_type = decltype(std::get<0>(std::declval<node_type>()));
+    using path_type = std::vector<v_type>;
+
+    auto is_valid_path(const path_type &path) const {
+        assert (path.size() >= 2);
+        const auto n_size = nodes.size();
+
+        for (const auto n : path) {
+            if (n >= n_size)
+                return false;
+        }
+
+        auto it = path.begin();
+        auto it_next = std::next(it);
+        for (; it_next != path.end(); ++it, ++it_next) {
+            const auto &adj_list = std::get<0>(nodes[*it]);
+            const auto edge_sink_it = std::find_if(
+                adj_list.begin(),
+                adj_list.end(),
+                [edge_sink = *it_next](const auto v) {
+                    return v == edge_sink;
+                }
+            );
+
+            if (edge_sink_it == adj_list.end())
+                return false;
+        }
+
+        return true;
+    }
+
+private:
+    std::vector<node_type> nodes;
+};
+
 template <typename vt, typename at, typename pt>
 auto get_node_value(
     typename pattern<vt, at, pt>::node_type const &pat_node
 )
     -> vt
 {
-    return std::get<0>(node);
+    return std::get<0>(pat_node);
 }
 
 template <typename vt, typename at, typename pt>
@@ -408,7 +460,7 @@ auto get_node_predicate(
 )
     -> pt
 {
-    return std::get<2>(node);
+    return std::get<2>(pat_node);
 }
 
 template <typename vt, typename at, typename pt>
@@ -428,8 +480,8 @@ auto get_edge_value(
 
 template <typename vt, typename at, typename pt>
 auto match(
-    auto &&node,
-    typename pattern<vt, at, pt>::node_type const &pat_node
+    typename pattern<vt, at, pt>::node_type const &pat_node,
+    auto &&node
 )
     -> bool
 {
