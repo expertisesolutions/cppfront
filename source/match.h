@@ -10,9 +10,11 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -29,6 +31,9 @@ CAPTURE -> '$' (todo...)
 */
 
 namespace cpp2 {
+
+template <typename ...args>
+using relation = std::set<std::tuple<args...>>;
 
 size_t find_closing_paren(std::string_view);
 
@@ -391,21 +396,57 @@ struct pattern {
 
     pattern() = delete;
 
-    pattern(size_t N, const predicate_type &pt) {
+    pattern(size_t N, const predicate_type &pred) {
         nodes.reserve(N);
 
         for (size_t i{}; i < N; ++i) {
-            nodes.emplace_back(i, std::vector<v_type>{}, pt);
+            nodes.emplace_back(i, std::vector<v_type>{}, pred);
         }
     }
 
-    pattern(size_t N, const std::vector<predicate_type> &pt) {
-        assert (pt.size() >= N);
+    pattern(size_t N, const std::vector<predicate_type> &preds) {
+        assert (preds.size() >= N);
         nodes.reserve(N);
 
         for (size_t i{}; i < N; ++i) {
-            nodes.emplace_back(i, std::vector<v_type>{}, pt[i]);
+            nodes.emplace_back(i, std::vector<v_type>{}, preds[i]);
         }
+    }
+
+    auto get_node(v_type vertex) const
+        -> const node_type&
+    {
+        assert (vertex < nodes.size());
+
+        return nodes.at(vertex);
+    }
+
+    auto get_node(v_type vertex)
+        -> node_type&
+    {
+        assert (vertex < nodes.size());
+
+        return nodes[vertex];
+    }
+
+    auto get_edges() const
+        -> const auto&
+    {
+        return edges_map;
+    }
+
+    auto get_edges()
+        -> auto&
+    {
+        return edges_map;
+    }
+
+    auto add_vertex(v_type vertex, const predicate_type &pred)
+        -> bool
+    {
+        nodes.emplace_back(nodes.size(), std::vector<v_type>{}, pred);
+
+        return true;
     }
 
     auto add_edge(const e_type &edge, const edge_value_type &value = {})
@@ -459,6 +500,22 @@ struct graph {
         for (size_t i{}; i < N; ++i) {
             nodes.emplace_back(std::vector<v_type>{}, attrs[i]);
         }
+    }
+
+    auto get_node(v_type vertex) const
+        -> const node_type&
+    {
+        assert (vertex < nodes.size());
+
+        return nodes.at(vertex);
+    }
+
+    auto get_node(v_type vertex)
+        -> node_type&
+    {
+        assert (vertex < nodes.size());
+
+        return nodes[vertex];
     }
 
     auto add_vertex(const attrs_type &attr)
@@ -557,6 +614,54 @@ auto match(
     -> bool
 {
     return std::get<2>(pat_node)(node);
+}
+
+template <typename at, typename pt>
+auto is_bounded_simulation_match(
+    const relation<
+        typename pattern<at, pt>::v_type,
+        typename graph<at>::v_type
+    > &rel,
+    const pattern<at, pt> &pat,
+    const graph<at> &grp
+)
+    -> bool
+{
+    using pattern_v_type = typename pattern<at, pt>::v_type;
+    using graph_v_type = typename graph<at>::v_type;
+    /// TODO: check whether every vertex of the pattern is in the relation
+    auto pattern_graph_vertex_mmap = std::unordered_multimap<pattern_v_type, graph_v_type>{};
+
+    for (const auto [pat_v, graph_v] : rel) {
+        const auto &pat_node = pat.get_node(pat_v);
+        const auto &graph_node = grp.get_node(graph_v);
+
+        if (!match<at, pt>(pat_node, graph_node)) {
+            return false;
+        }
+        pattern_graph_vertex_mmap.insert({pat_v, graph_v});
+    }
+
+    const auto &pat_edges = pat.get_edges();
+    for (const auto [pat_edge, pat_edge_value] : pat_edges) {
+        // u, u'
+        const auto [u, u_prime] = pat_edge;
+        // v, v'
+        const auto v_range = pattern_graph_vertex_mmap.equal_range(u),
+                   v_prime_range = pattern_graph_vertex_mmap.equal_range(u_prime);
+
+        for (auto it = v_range.first; it != v_range.second; ++it) {
+            const auto v = it->second;
+            for (auto it2 = v_prime_range.first; it2 != v_prime_range.second; ++it2) {
+                const auto v_prime = it2->second;
+                if (pat_edge_value) {
+
+                }
+            }
+        }
+    }
+
+    return true;
 }
 
 }
