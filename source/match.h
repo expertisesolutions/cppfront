@@ -355,13 +355,11 @@ struct trivial_predicate {
 // }
 
 template<
-    typename v_type_ = int,
     typename attrs_type_ = std::tuple<std::any>,
     typename predicate_type_ = trivial_predicate
 >
     requires (
-        std::is_integral_v<v_type_>
-        && requires (attrs_type_ at) {
+        requires (attrs_type_ at) {
             std::get<0>(at);
         }
         && requires (predicate_type_ pred, attrs_type_ at) {
@@ -376,7 +374,7 @@ template<
     )
 struct pattern {
     // using v_type = int;
-    using v_type = v_type_;
+    using v_type = size_t;
     using attrs_type = attrs_type_;
     using predicate_type = predicate_type_;
     using e_type = std::pair<v_type, v_type>;
@@ -391,9 +389,24 @@ struct pattern {
     >;
     using adjacency_list_type = decltype(std::get<1>(std::declval<node_type>()));
 
+    pattern() = delete;
+
+    pattern(size_t N, const predicate_type &pt) {
+        for (size_t i = {}; i < N; ++i) {
+            nodes.push_back({ i, {}, pt });
+        }
+    }
+
+    pattern(size_t N, const std::vector<predicate_type> &pt) {
+        assert (pt.size() >= N);
+
+        for (size_t i = {}; i < N; ++i) {
+            nodes.push_back({ i, {}, pt[i] });
+        }
+    }
 private:
     std::vector<node_type> nodes;
-    std::unordered_map<e_type, edge_value_type> edges_map;
+    std::map<e_type, edge_value_type> edges_map;
 };
 
 template<typename attrs_type_ = typename pattern<>::attrs_type>
@@ -404,7 +417,7 @@ template<typename attrs_type_ = typename pattern<>::attrs_type>
     )
 struct graph {
     using attrs_type = attrs_type_;
-    using v_type = int;
+    using v_type = size_t;
     using e_type = std::pair<v_type, v_type>;
     using node_type = std::tuple<
         std::vector<v_type>,
@@ -445,30 +458,30 @@ private:
     std::vector<node_type> nodes;
 };
 
-template <typename vt, typename at, typename pt>
+template <typename at, typename pt>
 auto get_node_value(
-    typename pattern<vt, at, pt>::node_type const &pat_node
+    typename pattern<at, pt>::node_type const &pat_node
 )
-    -> vt
+    -> typename pattern<at, pt>::v_type
 {
     return std::get<0>(pat_node);
 }
 
-template <typename vt, typename at, typename pt>
+template <typename at, typename pt>
 auto get_node_predicate(
-    typename pattern<vt, at, pt>::node_type const &pat_node
+    typename pattern<at, pt>::node_type const &pat_node
 )
     -> pt
 {
     return std::get<2>(pat_node);
 }
 
-template <typename vt, typename at, typename pt>
+template <typename at, typename pt>
 auto get_edge_value(
-    pattern<vt, at, pt> const &pat,
-    typename pattern<vt, at, pt>::e_type edge
+    pattern<at, pt> const &pat,
+    typename pattern<at, pt>::e_type edge
 )
-    -> typename pattern<vt, at, pt>::edge_value_type
+    -> typename pattern<at, pt>::edge_value_type
 {
     if (
         const auto edge_it = pat.edges_map.find(edge);
@@ -478,9 +491,9 @@ auto get_edge_value(
     return {};
 }
 
-template <typename vt, typename at, typename pt>
+template <typename at, typename pt>
 auto match(
-    typename pattern<vt, at, pt>::node_type const &pat_node,
+    typename pattern<at, pt>::node_type const &pat_node,
     auto &&node
 )
     -> bool
