@@ -401,7 +401,7 @@ struct pattern {
     pattern(size_t N, const predicate_type &pred) {
         nodes.reserve(N);
 
-        for (size_t i{}; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             nodes.emplace_back(i, std::vector<v_type>{}, pred);
         }
     }
@@ -410,7 +410,7 @@ struct pattern {
         assert (preds.size() >= N);
         nodes.reserve(N);
 
-        for (size_t i{}; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             nodes.emplace_back(i, std::vector<v_type>{}, preds[i]);
         }
     }
@@ -499,7 +499,7 @@ struct graph {
         assert (attrs.size() >= N);
         nodes.reserve(N);
 
-        for (size_t i{}; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             nodes.emplace_back(std::vector<v_type>{}, attrs[i]);
         }
     }
@@ -641,8 +641,8 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
         >
     >{};
     const auto graph_size = g.get_size();
-    auto parent = std::vector<std::optional<v_type>>(graph_size, std::nullopt);
-    auto visited = std::vector<bool>(graph_size, false);
+    auto parent = std::vector<std::optional<v_type>>(graph_size);
+    auto visited = std::vector<bool>(graph_size);
 
     auto push = [&next_nodes](auto &&elem) {
         next_nodes.push(elem);
@@ -668,7 +668,7 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
 
     push(source);
     /// TODO: should source be its own parent?
-    // parent[source] = {source};
+    parent[source] = source;
     visited[source] = true;
 
     while (!next_nodes.empty()) {
@@ -678,7 +678,7 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
 
         for (const auto adj : adj_list) {
             if (!visited[adj]) {
-                parent[adj] = {v};
+                parent[adj] = v;
                 visited[adj] = true;
                 push(adj);
             }
@@ -686,6 +686,65 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
     }
 
     return parent;
+}
+
+template <typename v_type>
+    requires (std::is_integral_v<v_type>)
+auto calc_distance(
+    const std::vector<std::optional<v_type>> &parent
+)
+    -> std::vector<std::optional<size_t>>
+{
+    // using v_type = typename graph<at>::v_type;
+    auto distance = std::vector<std::optional<size_t>>(parent.size());
+
+    for (v_type i = 0; i < parent.size(); ++i) {
+        if (!parent[i]) {
+            continue;
+        } else if (i == *parent[i]) {
+            distance[i] = 0;
+            continue;
+        }
+
+        auto i_parent = *parent[i];
+        auto dist = distance[i_parent];
+        auto lineage = std::stack<v_type>{};
+        while (!dist && i_parent != *parent[i_parent]) {
+            lineage.push(i_parent);
+            i_parent = *parent[i_parent];
+            dist = distance[i_parent];
+        }
+        if (i_parent == *parent[i_parent]) {
+            distance[i_parent] = 0;
+        }
+        auto curr_dist = dist ? *dist : size_t{};
+        while (!lineage.empty()) {
+            distance[lineage.top()] = ++curr_dist;
+            lineage.pop();
+        }
+        
+        distance[i] = *distance[*parent[i]] + 1;
+    }
+
+    return distance;
+}
+
+template <typename at>
+auto create_distance_matrix(const graph<at> &g)
+    -> std::vector<std::vector<std::optional<size_t>>>
+{
+    using v_type = typename graph<at>::v_type;
+    const auto graph_size = g.get_size();
+
+    auto dist_matrix = std::vector<std::vector<std::optional<size_t>>>{};
+
+    for (v_type i = 0; i < graph_size; ++i) {
+        auto parent = search<walk_type::bfs>(g, i);
+
+        dist_matrix.push_back(calc_distance(parent));
+    }
+
+    return dist_matrix;
 }
 
 template <typename at, typename pt>
