@@ -386,15 +386,15 @@ struct pattern {
     using predicate_type = predicate_type_;
     using e_type = std::pair<v_type, v_type>;
     using edge_value_type = std::optional<int>;
+    using adjacency_list_type = std::vector<v_type>;
     using node_type = std::tuple<
         // value of the node
         v_type,
         // adjacency list with the specified (optional) value (f_E)
-        std::vector<v_type>,
+        adjacency_list_type,
         // preficate object for the current node (f_V)
         predicate_type
     >;
-    using adjacency_list_type = decltype(std::get<1>(std::declval<node_type>()));
 
     pattern() = delete;
 
@@ -429,6 +429,12 @@ struct pattern {
         assert (vertex < nodes.size());
 
         return nodes[vertex];
+    }
+
+    auto get_size() const
+        -> size_t
+    {
+        return nodes.size();
     }
 
     auto get_edges() const
@@ -481,11 +487,11 @@ struct graph {
     using attrs_type = attrs_type_;
     using v_type = size_t;
     using e_type = std::pair<v_type, v_type>;
+    using adjacency_list_type = std::vector<v_type>;
     using node_type = std::tuple<
-        std::vector<v_type>,
+        adjacency_list_type,
         attrs_type
     >;
-    using adjacency_list_type = decltype(std::get<0>(std::declval<node_type>()));
     using path_type = std::vector<v_type>;
 
     graph() = delete;
@@ -518,6 +524,22 @@ struct graph {
         assert (vertex < nodes.size());
 
         return nodes[vertex];
+    }
+
+    auto get_adj_list(v_type vertex) const
+        -> const adjacency_list_type&
+    {
+        assert (vertex < nodes.size());
+
+        return std::get<0>(nodes[vertex]);
+    }
+
+    auto get_adj_list(v_type vertex)
+        -> adjacency_list_type&
+    {
+        assert (vertex < nodes.size());
+
+        return std::get<0>(nodes[vertex]);
     }
 
     auto get_size() const
@@ -561,7 +583,7 @@ struct graph {
         auto it = path.begin();
         auto it_next = std::next(it);
         for (; it_next != path.end(); ++it, ++it_next) {
-            const auto &adj_list = std::get<0>(nodes[*it]);
+            const auto &adj_list = get_adj_list(*it);
             const auto edge_sink_it = std::find_if(
                 adj_list.begin(),
                 adj_list.end(),
@@ -583,20 +605,20 @@ private:
 
 template <typename at, typename pt>
 auto get_node_value(
-    typename pattern<at, pt>::node_type const &pat_node
+    typename pattern<at, pt>::node_type const &node
 )
     -> typename pattern<at, pt>::v_type
 {
-    return std::get<0>(pat_node);
+    return std::get<0>(node);
 }
 
 template <typename at, typename pt>
 auto get_node_predicate(
-    typename pattern<at, pt>::node_type const &pat_node
+    typename pattern<at, pt>::node_type const &node
 )
     -> pt
 {
-    return std::get<2>(pat_node);
+    return std::get<2>(node);
 }
 
 template <typename at, typename pt>
@@ -615,13 +637,58 @@ auto get_edge_value(
 }
 
 template <typename at, typename pt>
+auto get_node_adj_list(
+    typename pattern<at, pt>::node_type const &node
+)
+    -> typename pattern<at, pt>::adjacency_list_type const&
+{
+    return std::get<1>(node);
+}
+
+template <typename at>
+auto get_node_adj_list(
+    typename graph<at>::node_type const &node
+)
+    -> typename graph<at>::adjacency_list_type const&
+{
+    return std::get<0>(node);
+}
+
+template <typename at, typename pt>
+auto get_out_degree(
+    typename pattern<at, pt>::node_type const &node 
+)
+    -> size_t
+{
+    return std::size(get_node_adj_list(node));
+}
+
+template <typename at>
+auto get_out_degree(
+    typename graph<at>::node_type const &node 
+)
+    -> size_t
+{
+    return std::size(get_node_adj_list(node));
+}
+
+template <typename at>
+auto get_node_attrs(
+    typename graph<at>::node_type const &node
+)
+    -> const at&
+{
+    return std::get<1>(node);
+}
+
+template <typename at, typename pt>
 auto match(
     typename pattern<at, pt>::node_type const &pat_node,
     auto &&node
 )
     -> bool
 {
-    return std::get<2>(pat_node)(node);
+    return get_node_predicate<at, pt>(pat_node)(node);
 }
 
 enum class walk_type : std::uint8_t { bfs, dfs };
@@ -673,8 +740,8 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
 
     while (!next_nodes.empty()) {
         const auto v = pop();
-        const auto &curr_node = g.get_node(v);
-        const auto &adj_list = std::get<0>(curr_node);
+        // const auto &curr_node = g.get_node(v);
+        const auto &adj_list = g.get_adj_list(v); // std::get<0>(curr_node);
 
         for (const auto adj : adj_list) {
             if (!visited[adj]) {
@@ -807,6 +874,131 @@ auto is_bounded_simulation_match(
 
     return true;
 }
+
+template <typename at, typename pt>
+auto bounded_simulation_match(
+    const pattern<at, pt> &pat,
+    const graph<at> &grp
+)
+    -> relation<
+        typename pattern<at, pt>::v_type,
+        typename graph<at>::v_type
+    >
+{
+    using pattern_v_type = typename pattern<at, pt>::v_type;
+    using graph_v_type = typename graph<at>::v_type;
+
+    const auto X = create_distance_matrix(grp);
+
+    auto anc = std::multimap<
+        std::tuple<graph_v_type, pattern_v_type, pattern_v_type>,
+        graph_v_type
+    >{};
+    auto desc = decltype(anc){};
+
+    auto mat = std::multimap<pattern_v_type, graph_v_type>{};
+    auto premv = decltype(mat){};
+
+    const auto graph_size = grp.get_size();
+    const auto &pat_edges = pat.get_edges();
+    for (const auto &[edge, edge_value] : pat_edges) {
+        const auto [jp, ip] = edge;
+        const auto u_prime = pat.get_node(jp);
+        const auto u = pat.get_node(ip);
+
+        for (size_t i = 0; i < graph_size; ++i) {
+            const auto &v = grp.get_node(i);
+            if (match(u, v)) {
+                for (size_t j = 0; j < graph_size; ++j) {
+                    // const auto &v_prime = grp.get_node(j);
+                    if (
+                        const auto dist = X[j][i];
+                        !edge_value ||
+                        (
+                            edge_value &&
+                            dist &&
+                            *dist <= *edge_value
+                        )
+                    ) {
+                        anc.insert({{i, jp, ip}, j});
+                    }
+                }
+            }
+            if (match(u_prime, v)) {
+                for (size_t j = 0; j < graph_size; ++j) {
+                    // const auto &v_prime = grp.get_node(j);
+                    if (
+                        const auto dist = X[i][j];
+                        !edge_value ||
+                        (
+                            edge_value &&
+                            dist &&
+                            *dist <= *edge_value
+                        )
+                    ) {
+                        desc.insert({{i, jp, ip}, j});
+                    }
+                }
+            }
+        }
+    }
+
+    const auto pattern_size = pat.get_size();
+    for (size_t i = 0; i < pattern_size; ++i) {
+        const auto &u = pat.get_node(i);
+        // calc mat
+        for (size_t j = 0; j < graph_size; ++j) {
+            const auto &v = grp.get_node(j);
+            if (match(u, v)) {
+                // const auto out_degree_v = get_out_degree(v);
+                // const auto out_degree_u = get_out_degree(u);    
+                if (
+                    get_out_degree(u) == 0 ||
+                    get_out_degree(v) != 0
+                ) {
+                    mat.insert({i, j});
+                }
+            }
+        }
+        // calc premv
+        for (size_t j = 0; j < graph_size; ++j) {
+            const auto &v_prime = grp.get_node(j);
+            // const auto out_degree_v_prime = get_out_degree(v_prime);
+            if (get_out_degree(v_prime) != 0) {
+                const auto it = std::find_if(
+                    pat_edges.begin(),
+                    pat_edges.end(),
+                    [&pat, &mat, &X, &v_prime, i, j](auto &&edge_value_pair) {
+                        const auto [edge, value] = edge_value_pair;
+                        const auto [jp, ip] = edge;
+                        const auto &u_prime = pat.get_node(jp);
+                        const auto u = pat.get_node(ip);
+
+                        const auto range = mat.equal_range(i);
+                        const auto it = std::find_if(
+                            range.first,
+                            range.second,
+                            [&X, &u_prime, &v_prime, j, value](auto k) {
+                                // const auto v = grp.get_node(k);
+                                const auto dist = X[j][k];
+                                return match(u_prime, v_prime) &&
+                                    (value && dist && *dist <= *value);
+                            }
+                        );
+                        return it != range.second;
+                    }
+                );
+
+                if (it == pat_edges.end()) {
+                    premv.insert({i, j});
+                }
+            }
+        }
+    }
+    
+    return {};
+}
+
 
 }
 
