@@ -660,7 +660,7 @@ auto get_out_degree(
 )
     -> size_t
 {
-    return std::size(get_node_adj_list(node));
+    return std::size(get_node_adj_list<at, pt>(node));
 }
 
 template <typename at>
@@ -669,7 +669,7 @@ auto get_out_degree(
 )
     -> size_t
 {
-    return std::size(get_node_adj_list(node));
+    return std::size(get_node_adj_list<at>(node));
 }
 
 template <typename at>
@@ -908,7 +908,7 @@ auto bounded_simulation_match(
 
         for (size_t i = 0; i < graph_size; ++i) {
             const auto &v = grp.get_node(i);
-            if (match(u, v)) {
+            if (match<at, pt>(u, v)) {
                 for (size_t j = 0; j < graph_size; ++j) {
                     // const auto &v_prime = grp.get_node(j);
                     if (
@@ -924,7 +924,7 @@ auto bounded_simulation_match(
                     }
                 }
             }
-            if (match(u_prime, v)) {
+            if (match<at, pt>(u_prime, v)) {
                 for (size_t j = 0; j < graph_size; ++j) {
                     // const auto &v_prime = grp.get_node(j);
                     if (
@@ -949,12 +949,12 @@ auto bounded_simulation_match(
         // calc mat
         for (size_t j = 0; j < graph_size; ++j) {
             const auto &v = grp.get_node(j);
-            if (match(u, v)) {
-                // const auto out_degree_v = get_out_degree(v);
-                // const auto out_degree_u = get_out_degree(u);    
+            if (match<at, pt>(u, v)) {
+                // const auto out_degree_v = get_out_degree<at>(v);
+                // const auto out_degree_u = get_out_degree<at, pt>(u);    
                 if (
-                    get_out_degree(u) == 0 ||
-                    get_out_degree(v) != 0
+                    get_out_degree<at, pt>(u) == 0 ||
+                    get_out_degree<at>(v) != 0
                 ) {
                     mat.insert({i, j});
                 }
@@ -963,8 +963,8 @@ auto bounded_simulation_match(
         // calc premv
         for (size_t j = 0; j < graph_size; ++j) {
             const auto &v_prime = grp.get_node(j);
-            // const auto out_degree_v_prime = get_out_degree(v_prime);
-            if (get_out_degree(v_prime) != 0) {
+            // const auto out_degree_v_prime = get_out_degree<at>(v_prime);
+            if (get_out_degree<at>(v_prime) != 0) {
                 const auto it = std::find_if(
                     pat_edges.begin(),
                     pat_edges.end(),
@@ -978,10 +978,11 @@ auto bounded_simulation_match(
                         const auto it = std::find_if(
                             range.first,
                             range.second,
-                            [&X, &u_prime, &v_prime, j, value](auto k) {
+                            [&X, &u_prime, &v_prime, j, value](auto pair) {
                                 // const auto v = grp.get_node(k);
+                                const auto [_, k] = pair;
                                 const auto dist = X[j][k];
-                                return match(u_prime, v_prime) &&
+                                return match<at, pt>(u_prime, v_prime) &&
                                     (value && dist && *dist <= *value);
                             }
                         );
