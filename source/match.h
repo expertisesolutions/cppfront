@@ -4,8 +4,9 @@
 #include "cpp2util.h"
 #include "lex.h"
 
-#include <assert.h>
-#include <ctype.h>
+#include <algorithm>
+#include <cassert>
+#include <cctype>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -890,29 +891,34 @@ auto bounded_simulation_match(
 
     const auto X = create_distance_matrix(grp);
 
-    auto anc = std::multimap<
+    auto anc = std::map<
         std::tuple<graph_v_type, pattern_v_type, pattern_v_type>,
-        graph_v_type
+        std::set<graph_v_type>
     >{};
     auto desc = decltype(anc){};
 
-    auto mat = std::multimap<pattern_v_type, graph_v_type>{};
+    auto mat = std::map<pattern_v_type, std::set<graph_v_type>>{};
     auto premv = decltype(mat){};
 
     const auto graph_size = grp.get_size();
     const auto &pat_edges = pat.get_edges();
+    /**
+     * Indexing conventions:
+     * i for v, i1 for v1, i_ for v_prime, i1_ for v1_prime and so on
+     * ip for u, ip1 for u1. ip_ for u_prime, ip1_prime for u1_prime and so on 
+     */
     for (const auto &[edge, edge_value] : pat_edges) {
-        const auto [jp, ip] = edge;
-        const auto u_prime = pat.get_node(jp);
+        const auto [ip_, ip] = edge;
+        const auto u_prime = pat.get_node(ip_);
         const auto u = pat.get_node(ip);
 
         for (size_t i = 0; i < graph_size; ++i) {
             const auto &v = grp.get_node(i);
             if (match<at, pt>(u, v)) {
-                for (size_t j = 0; j < graph_size; ++j) {
-                    // const auto &v_prime = grp.get_node(j);
+                for (size_t i_ = 0; i_ < graph_size; ++i_) {
+                    // const auto &v_prime = grp.get_node(i_);
                     if (
-                        const auto dist = X[j][i];
+                        const auto dist = X[i_][i];
                         !edge_value ||
                         (
                             edge_value &&
@@ -920,15 +926,15 @@ auto bounded_simulation_match(
                             *dist <= *edge_value
                         )
                     ) {
-                        anc.insert({{i, jp, ip}, j});
+                        anc[{i, ip_, ip}].insert(i_);
                     }
                 }
             }
             if (match<at, pt>(u_prime, v)) {
-                for (size_t j = 0; j < graph_size; ++j) {
-                    // const auto &v_prime = grp.get_node(j);
+                for (size_t i_ = 0; i_ < graph_size; ++i_) {
+                    // const auto &v_prime = grp.get_node(i_);
                     if (
-                        const auto dist = X[i][j];
+                        const auto dist = X[i][i_];
                         !edge_value ||
                         (
                             edge_value &&
@@ -936,7 +942,7 @@ auto bounded_simulation_match(
                             *dist <= *edge_value
                         )
                     ) {
-                        desc.insert({{i, jp, ip}, j});
+                        desc[{i, ip_, ip}].insert(i_);
                     }
                 }
             }
@@ -944,11 +950,11 @@ auto bounded_simulation_match(
     }
 
     const auto pattern_size = pat.get_size();
-    for (size_t i = 0; i < pattern_size; ++i) {
-        const auto &u = pat.get_node(i);
+    for (size_t ip = 0; ip < pattern_size; ++ip) {
+        const auto &u = pat.get_node(ip);
         // calc mat
-        for (size_t j = 0; j < graph_size; ++j) {
-            const auto &v = grp.get_node(j);
+        for (size_t i = 0; i < graph_size; ++i) {
+            const auto &v = grp.get_node(i);
             if (match<at, pt>(u, v)) {
                 // const auto out_degree_v = get_out_degree<at>(v);
                 // const auto out_degree_u = get_out_degree<at, pt>(u);    
@@ -956,48 +962,143 @@ auto bounded_simulation_match(
                     get_out_degree<at, pt>(u) == 0 ||
                     get_out_degree<at>(v) != 0
                 ) {
-                    mat.insert({i, j});
+                    mat[ip].insert(i);
                 }
             }
         }
         // calc premv
-        for (size_t j = 0; j < graph_size; ++j) {
-            const auto &v_prime = grp.get_node(j);
+        for (size_t i_ = 0; i_ < graph_size; ++i_) {
+            const auto &v_prime = grp.get_node(i_);
             // const auto out_degree_v_prime = get_out_degree<at>(v_prime);
             if (get_out_degree<at>(v_prime) != 0) {
                 const auto it = std::find_if(
                     pat_edges.begin(),
                     pat_edges.end(),
-                    [&pat, &mat, &X, &v_prime, i, j](auto &&edge_value_pair) {
+                    [&pat, &mat, &X, &v_prime, ip, i_](auto &&edge_value_pair) {
                         const auto [edge, value] = edge_value_pair;
-                        const auto [jp, ip] = edge;
-                        const auto &u_prime = pat.get_node(jp);
-                        const auto u = pat.get_node(ip);
+                        if (std::get<1>(edge) != ip) {
+                            return false;
+                        }
+                        const auto ip_ = std::get<0>(edge);
+                        const auto &u_prime = pat.get_node(ip_);
 
-                        const auto range = mat.equal_range(i);
+                        const auto &mat_u_range = mat[ip];
                         const auto it = std::find_if(
-                            range.first,
-                            range.second,
-                            [&X, &u_prime, &v_prime, j, value](auto pair) {
-                                // const auto v = grp.get_node(k);
-                                const auto [_, k] = pair;
-                                const auto dist = X[j][k];
+                            mat_u_range.cbegin(),
+                            mat_u_range.cend(),
+                            [&X, &u_prime, &v_prime, i_, value](const auto i) {
+                                // const auto v = grp.get_node(i);
+                                const auto dist = X[i_][i];
                                 return match<at, pt>(u_prime, v_prime) &&
                                     (value && dist && *dist <= *value);
                             }
                         );
-                        return it != range.second;
+                        return it != mat_u_range.cend();
                     }
                 );
 
                 if (it == pat_edges.end()) {
-                    premv.insert({i, j});
+                    premv[ip].insert(i_);
                 }
             }
         }
     }
+
+    auto loop_cond = [&premv, pattern_size]() {
+        for (size_t ip = 0; ip < pattern_size; ++ip) {
+            // const auto range = premv.equal_range(i);
+            // if (range.first == range.second)
+            //     return true;
+            if (!premv[ip].empty())
+                return std::optional<size_t>{ip};
+        }
+        return std::optional<size_t>{};
+    };
+
+    auto ip_opt = decltype(loop_cond()){};
+    // while the is u in Vp such that premv(u) is not empty
+    while (ip_opt = loop_cond()) {
+        std::for_each(
+            pat_edges.begin(),
+            pat_edges.end(),
+            [&pat, &premv, &mat, &pat_edges, &anc, &desc, graph_size](auto &&edge_value_pair) {
+                const auto [edge, value] = edge_value_pair;
+                const auto [ip_, ip] = edge;
+                const auto &u_prime = pat.get_node(ip_);
+                const auto &u = pat.get_node(ip);
+                
+                const auto &premv_u_range = premv[ip];
+                std::for_each(
+                    premv_u_range.cbegin(),
+                    premv_u_range.cend(),
+                    [/*&grp, */&mat, &pat_edges, &pat, &premv, &anc, &desc, ip_](const auto i1) {
+                        // const auto &v1 = grp.get_node(i1);
+                        if (mat[ip_].contains(i1)) {
+                            mat[ip_].erase(i1);
+
+                            if (mat[ip_].empty()) {
+                                /// TODO: return empty set on the outermost function
+                            }
+                            std::for_each(
+                                pat_edges.begin(),
+                                pat_edges.end(),
+                                [&anc, &premv, &desc, &mat, ip_, i1](auto &&edge_value_pair) {
+                                    const auto [edge, value] = edge_value_pair;
+                                    if (std::get<1>(edge) != ip_)
+                                        return;
+                                    const auto ip__ = std::get<0>(edge);
+                                    // const auto &u_prime_prime = pat.get_node(ip__);
+                                    const auto &anc_v1_u_prime_prime_u_prime_range = anc[{i1, ip__, ip_}];
+                                    const auto &prevm_u_prime_range = premv[ip_];
+                                    auto diff = std::vector<graph_v_type>{};
+                                    // std::vector<
+                                    //     decltype(prevm_u_prime_range)::key_type
+                                    // >{};
+                                    std::set_difference(
+                                        anc_v1_u_prime_prime_u_prime_range.cbegin(),
+                                        anc_v1_u_prime_prime_u_prime_range.cend(),
+                                        prevm_u_prime_range.cbegin(),
+                                        prevm_u_prime_range.cend(),
+                                        std::inserter(diff, diff.begin())
+                                    );
+
+                                    for (const auto i1_ : diff) {
+                                        const auto &desc_v1_prime_u_prime_prime_u_prime_range
+                                            = desc[{i1_, ip__, ip_}];
+                                        const auto &mat_u_prime_range = mat[ip_];
+                                        auto intersec = std::vector<graph_v_type>{};
+                                        std::set_intersection(
+                                            desc_v1_prime_u_prime_prime_u_prime_range.cbegin(),
+                                            desc_v1_prime_u_prime_prime_u_prime_range.cend(),
+                                            mat_u_prime_range.cbegin(),
+                                            mat_u_prime_range.cend(),
+                                            std::inserter(intersec, intersec.begin())
+                                        );
+
+                                        if (intersec.empty()) {
+                                            premv[ip_].insert(i1_);
+                                        }
+                                    }                                    
+                                }
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
+        premv[*ip_opt].clear();
+    }
     
-    return {};
+    auto S = relation<pattern_v_type, graph_v_type>{};
+    for (size_t ip = 0; ip < pattern_size; ++ip) {
+        const auto &mat_u_range = mat[ip];
+        for (const auto i : mat_u_range) {
+            S.emplace(ip, i);
+        }
+    }
+
+    return S;
 }
 
 
