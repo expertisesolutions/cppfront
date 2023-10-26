@@ -909,16 +909,19 @@ auto bounded_simulation_match(
      * i for v, i1 for v1, i_ for v_prime, i1_ for v1_prime and so on
      * ip for u, ip1 for u1. ip_ for u_prime, ip1_prime for u1_prime and so on 
      */
+    // For each edge (u', u) in Ep
     for (const auto &[edge, edge_value] : pat_edges) {
         const auto [ip_, ip] = edge;
         const auto u_prime = pat.get_node(ip_);
         const auto u = pat.get_node(ip);
 
+        // and each v in V
         for (size_t i = 0; i < graph_size; ++i) {
             const auto &v = grp.get_node(i);
+            // if fA(v) satisfies fV(u) then compute anc(fE(u', u), fV(u'), v)
             if (match<at, pt>(u, v)) {
                 for (size_t i_ = 0; i_ < graph_size; ++i_) {
-                    // const auto &v_prime = grp.get_node(i_);
+                    const auto &v_prime = grp.get_node(i_);
                     if (
                         const auto dist = X[i_][i];
                         !edge_value ||
@@ -926,15 +929,16 @@ auto bounded_simulation_match(
                             edge_value &&
                             dist &&
                             *dist <= *edge_value
-                        )
+                        ) && match<at, pt>(u_prime, v_prime)
                     ) {
                         anc[{i, ip_, ip}].insert(i_);
                     }
                 }
             }
+            // if fA(v) satisfies fV(u') then compute anc(fE(u', u), fV(u), v)
             if (match<at, pt>(u_prime, v)) {
                 for (size_t i_ = 0; i_ < graph_size; ++i_) {
-                    // const auto &v_prime = grp.get_node(i_);
+                    const auto &v_prime = grp.get_node(i_);
                     if (
                         const auto dist = X[i][i_];
                         !edge_value ||
@@ -942,7 +946,7 @@ auto bounded_simulation_match(
                             edge_value &&
                             dist &&
                             *dist <= *edge_value
-                        )
+                        ) && match<at, pt>(u, v_prime)
                     ) {
                         desc[{i, ip_, ip}].insert(i_);
                     }
@@ -952,14 +956,18 @@ auto bounded_simulation_match(
     }
 
     const auto pattern_size = pat.get_size();
+    // for each u in Vp
     for (size_t ip = 0; ip < pattern_size; ++ip) {
         const auto &u = pat.get_node(ip);
-        // calc mat
+        // mat(u) = {v; v in V, fA(v) satisfies fV(u)
+        //           and out-degree(v) != 0 if our-degree(u) != 0}
         for (size_t i = 0; i < graph_size; ++i) {
             const auto &v = grp.get_node(i);
             if (match<at, pt>(u, v)) {
                 // const auto out_degree_v = get_out_degree<at>(v);
                 // const auto out_degree_u = get_out_degree<at, pt>(u);    
+                // (out-degree(u) != 0) --> (out-degree(v) != 0) is equivalent to
+                // (out-degree(u) = 0) or (out-degree(v) != 0)
                 if (
                     get_out_degree<at, pt>(u) == 0 ||
                     get_out_degree<at>(v) != 0
@@ -968,7 +976,10 @@ auto bounded_simulation_match(
                 }
             }
         }
-        // calc premv
+        // calc premv is tricky
+        // premv(u) = {v'; v' in V, out-degree(v') != 0 and there is no
+        //             (u', u) in Ep such that (v in mat(u), fA(v') satisfies
+        //             fV(u') and len(v', ..., v) <= f(u',u))}
         for (size_t i_ = 0; i_ < graph_size; ++i_) {
             const auto &v_prime = grp.get_node(i_);
             // const auto out_degree_v_prime = get_out_degree<at>(v_prime);
@@ -979,6 +990,7 @@ auto bounded_simulation_match(
                     [&pat, &mat, &X, &v_prime, ip, i_](auto &&edge_value_pair) {
                         const auto [edge, value] = edge_value_pair;
                         if (std::get<1>(edge) != ip) {
+                            // edge sink is not u
                             return false;
                         }
                         const auto ip_ = std::get<0>(edge);
@@ -1006,24 +1018,42 @@ auto bounded_simulation_match(
         }
     }
 
+    // there exists a node u in Vp such that premv(u) is not empty
     auto loop_cond = [&premv, pattern_size]() {
-        for (size_t ip = 0; ip < pattern_size; ++ip) {
-            if (!premv[ip].empty())
-                return std::optional<size_t>{ip};
-        }
-        return std::optional<size_t>{};
+        const auto it = std::find_if(
+            premv.begin(),
+            premv.end(),
+            [](auto &&u_premv_u_pair) {
+                return !u_premv_u_pair.second.empty();
+            }
+        );
+        return it != premv.end() ? 
+            std::optional<size_t>{it->first} :
+            std::optional<size_t>{};
+        // for (size_t ip = 0; ip < pattern_size; ++ip) {
+        //     if (!premv[ip].empty())
+        //         return std::optional<size_t>{ip};
+        // }
+        // return std::optional<size_t>{};
     };
 
     auto ip_opt = decltype(loop_cond()){};
     // while the is u in Vp such that premv(u) is not empty
     while (ip_opt = loop_cond()) {
+        const auto ip = *ip_opt;
+        // for each (u', u) in Vp
         for (const auto &[edge, value] : pat_edges) {
             // const auto [edge, value] = edge_value_pair;
-            const auto [ip_, ip] = edge;
-            const auto &u_prime = pat.get_node(ip_);
-            const auto &u = pat.get_node(ip);
+            if (std::get<1>(edge) != ip) {
+                /// TODO: check if this is correct
+                continue;
+            }
+            const auto ip_ = std::get<0>(edge);
+            // const auto &u_prime = pat.get_node(ip_);
+            // const auto &u = pat.get_node(ip);
             
             const auto &premv_u_range = premv[ip];
+            // and each v1 in premv(u)
             for (const auto i1 : premv_u_range) {
                 // const auto &v1 = grp.get_node(i1);
                 if (mat[ip_].contains(i1)) {
@@ -1031,9 +1061,10 @@ auto bounded_simulation_match(
 
                     if (mat[ip_].empty())
                         return {};
+                    // for each u'' with (u'', u') in Ep
                     for (const auto &[edge, value] : pat_edges) {
                         if (std::get<1>(edge) != ip_)
-                            return;
+                            continue;
                         const auto ip__ = std::get<0>(edge);
                         // const auto &u_prime_prime = pat.get_node(ip__);
                         const auto &anc_v1_u_prime_prime_u_prime_range = anc[{i1, ip__, ip_}];
@@ -1050,6 +1081,7 @@ auto bounded_simulation_match(
                             std::inserter(diff, diff.begin())
                         );
 
+                        // for each v1' in (anc(fE(u'', u'), fV(u''), v1) - premv(u'))
                         for (const auto i1_ : diff) {
                             const auto &desc_v1_prime_u_prime_prime_u_prime_range
                                 = desc[{i1_, ip__, ip_}];
@@ -1072,7 +1104,8 @@ auto bounded_simulation_match(
             }            
         }
 
-        premv[*ip_opt].clear();
+        // premv(u) := empty set
+        premv[ip].clear();
     }
     
     auto S = relation<pattern_v_type, graph_v_type>{};
