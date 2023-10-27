@@ -689,7 +689,9 @@ auto match(
 )
     -> bool
 {
-    return get_node_predicate<at, pt>(pat_node)(node);
+    return get_node_predicate<at, pt>(pat_node)(
+        get_node_attrs<at>(node)
+    );
 }
 
 enum class walk_type : std::uint8_t { bfs, dfs };
@@ -878,6 +880,40 @@ auto is_bounded_simulation_match(
     return true;
 }
 
+template<typename t1, typename t2>
+std::ostream& operator<<(std::ostream &os, const std::tuple<t1, t2> &t)
+{
+    return os << "(" << std::get<0>(t) << "," << std::get<1>(t) << ")";
+}
+
+template<typename t1, typename t2, typename t3>
+std::ostream& operator<<(std::ostream &os, const std::tuple<t1, t2, t3> &t)
+{
+    return os << "(" << std::get<0>(t) << "," << std::get<1>(t) << "," << std::get<2>(t) << ")";
+}
+
+template<typename value>
+std::ostream& operator<<(std::ostream &os, const std::set<value> &s)
+{
+    os << "{";
+    auto sep = "";
+    for (const auto &v : s) {
+        os << sep << v;
+        sep = ",";
+    }
+    return os << "}";
+}
+
+template <typename key, typename value>
+std::ostream& operator<<(std::ostream &os, const std::map<key, value> &m)
+{
+    os << "{\n";
+    for (const auto &[k, v] : m) {
+        os << "\t(" << k << ", " << v << ")\n";
+    }
+    return os << "}\n";
+}
+
 template <typename at, typename pt>
 auto bounded_simulation_match(
     const pattern<at, pt> &pat,
@@ -924,28 +960,30 @@ auto bounded_simulation_match(
                     const auto &v_prime = grp.get_node(i_);
                     if (
                         const auto dist = X[i_][i];
-                        !edge_value ||
                         (
-                            edge_value &&
-                            dist &&
-                            *dist <= *edge_value
+                            !edge_value || (
+                                edge_value &&
+                                dist &&
+                                *dist <= *edge_value
+                            )
                         ) && match<at, pt>(u_prime, v_prime)
                     ) {
                         anc[{i, ip_, ip}].insert(i_);
                     }
                 }
             }
-            // if fA(v) satisfies fV(u') then compute anc(fE(u', u), fV(u), v)
+            // if fA(v) satisfies fV(u') then compute desc(fE(u', u), fV(u), v)
             if (match<at, pt>(u_prime, v)) {
                 for (size_t i_ = 0; i_ < graph_size; ++i_) {
                     const auto &v_prime = grp.get_node(i_);
                     if (
                         const auto dist = X[i][i_];
-                        !edge_value ||
                         (
-                            edge_value &&
-                            dist &&
-                            *dist <= *edge_value
+                            !edge_value || (
+                                edge_value &&
+                                dist &&
+                                *dist <= *edge_value
+                            )
                         ) && match<at, pt>(u, v_prime)
                     ) {
                         desc[{i, ip_, ip}].insert(i_);
@@ -960,7 +998,7 @@ auto bounded_simulation_match(
     for (size_t ip = 0; ip < pattern_size; ++ip) {
         const auto &u = pat.get_node(ip);
         // mat(u) = {v; v in V, fA(v) satisfies fV(u)
-        //           and out-degree(v) != 0 if our-degree(u) != 0}
+        //           and out-degree(v) != 0 if out-degree(u) != 0}
         for (size_t i = 0; i < graph_size; ++i) {
             const auto &v = grp.get_node(i);
             if (match<at, pt>(u, v)) {
@@ -1004,7 +1042,10 @@ auto bounded_simulation_match(
                                 // const auto v = grp.get_node(i);
                                 const auto dist = X[i_][i];
                                 return match<at, pt>(u_prime, v_prime) &&
-                                    (value && dist && *dist <= *value);
+                                    (
+                                        !value ||
+                                        (value && dist && *dist <= *value)
+                                    );
                             }
                         );
                         return it != mat_u_range.cend();
