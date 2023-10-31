@@ -992,6 +992,7 @@ auto lex_line(
         //  reserve all the ones Cpp1 has both for compatibility and to not give up a keyword
         //  Some keywords like "delete" and "union" are not in this list because we reject them elsewhere
         //  Cpp2 also adds a couple, notably "is" and "as"
+        //  Adding keyword "match" for specific graph matching syntax
         static const auto keys = std::vector<std::string_view>{
             "alignas", "alignof", "asm", "as", "auto",
             "bool", "break",
@@ -1003,7 +1004,7 @@ auto lex_line(
             "goto",
             "if", "import", "inline", "int", "is",
             "long",
-            "module", "mutable",
+            "match", "module", "mutable",
             "namespace", "noexcept",
             "operator",
             "private", "protected", "public",

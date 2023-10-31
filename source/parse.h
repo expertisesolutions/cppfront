@@ -1675,6 +1675,130 @@ struct selection_statement_node
     }
 };
 
+struct match_expression_node;
+
+struct match_primary_expression_node
+{
+    match_expression_node *const parent = nullptr;
+
+    enum active { identifier=0, expression_list };
+    std::variant<
+        token const*,                             // could be id, arrow, colon, etc
+        std::unique_ptr<expression_list_node>     // node attributes
+    > expression;
+
+    // API
+    auto is_id_expression() const
+        -> bool
+    {
+        if (expression.index() == identifier) {
+            return std::get<identifier>(expression)->type() == lexeme::Identifier;
+        }
+        // else
+        return false;
+    }
+
+    auto is_arrow() const
+        -> bool
+    {
+        if (expression.index() == identifier) {
+            return std::get<identifier>(expression)->type() == lexeme::Arrow;
+        }
+        // else
+        return false;
+    }
+
+    auto is_expression_list() const
+        -> bool
+    {
+        return expression.index() == expression_list;
+    }
+
+    auto visit(auto& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        try_visit<identifier     >(expression, v, depth);
+        try_visit<expression_list>(expression, v, depth);
+        v.end(*this, depth);
+    }
+};
+
+struct match_compound_expression_node;
+
+struct match_expression_node
+{
+    match_compound_expression_node *const parent = nullptr;
+
+    std::vector<std::unique_ptr<match_primary_expression_node>> primary_expressions = {};
+
+    auto visit(auto& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        for (auto const &x : primary_expressions) {
+            assert (x);
+            x->visit(v, depth + 1);
+        }
+        v.end(*this, depth);
+    }
+};
+
+struct match_compound_expression_node
+{
+    source_position open_brace;
+    source_position close_brace;
+
+    std::vector<std::unique_ptr<match_expression_node>> expressions;
+
+    match_compound_expression_node(
+        source_position o = source_position{},
+        source_position c = source_position{}
+    )
+        : open_brace{o}, close_brace{c}
+    { }
+
+    auto position() const
+        -> source_position
+    {
+        return open_brace;
+    }
+
+    auto visit(auto& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        for (auto const& x : expressions) {
+            assert (x);
+            x->visit(v, depth + 1);
+        }
+        v.end(*this, depth);
+    }
+};
+
+struct match_statement_node
+{
+    token const* identifier = {};
+    std::unique_ptr<match_compound_expression_node> match_stmts;
+
+    auto position() const
+        -> source_position
+    {
+        assert (identifier);
+        return identifier->position();
+    }
+
+    auto visit(auto &v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        assert (identifier);
+        v.start(*identifier, depth + 1);
+        assert (match_stmts);
+        match_stmts->visit(v, depth + 1);
+        v.end(*this.depth);
+    }
+};
 
 struct parameter_declaration_node;
 
