@@ -1688,10 +1688,16 @@ struct match_primary_expression_node
     > expression;
 
     // API
+    auto is_token() const
+        -> bool
+    {
+        return expression.index() == identifier;
+    }
+
     auto is_id_expression() const
         -> bool
     {
-        if (expression.index() == identifier) {
+        if (is_token()) {
             return std::get<identifier>(expression)->type() == lexeme::Identifier;
         }
         // else
@@ -1701,11 +1707,32 @@ struct match_primary_expression_node
     auto is_arrow() const
         -> bool
     {
-        if (expression.index() == identifier) {
+        if (is_token()) {
             return std::get<identifier>(expression)->type() == lexeme::Arrow;
         }
         // else
         return false;
+    }
+
+    auto is_colon() const
+        -> bool
+    {
+        if (is_token()) {
+            return std::get<identifier>(expression)->type() == lexeme::Colon;
+        }
+        // else
+        return false;
+    }
+
+    auto get_token() const
+        -> token const*
+    {
+        if (is_token()) {
+            // assert (token);??
+            return std::get<identifier>(expression);
+        }
+        // else
+        return {};
     }
 
     auto is_expression_list() const
@@ -1718,8 +1745,73 @@ struct match_primary_expression_node
         -> void
     {
         v.start(*this, depth);
-        try_visit<identifier     >(expression, v, depth);
         try_visit<expression_list>(expression, v, depth);
+        v.end(*this, depth);
+    }
+};
+
+struct match_node_node
+{
+    source_position open_paren;
+    source_position close_paren;
+    token const* label = nullptr;
+    source_position open_brace;
+    source_position close_brace;
+    /// TODO: I don't think it should be an expression_list, check that
+    std::unique_ptr<expression_list_node> attrs;
+
+    match_node_node(
+        source_position o = {},
+        source_position c = {}
+    )
+        : open_paren{o}, close_paren{c}
+    { }
+
+    auto get_label()
+        -> token const*
+    {
+        assert (label);
+        return label;
+    }
+
+    auto visit(auto& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        assert (attrs);
+        attrs->visit(v, depth + 1);
+        v.end(*this, depth);
+    }
+};
+
+struct match_arrow_node;
+
+struct match_edge_attrs_node
+{
+    match_arrow_node const* parent = nullptr;
+
+    auto visit(auto&v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+
+        v.end(*this, depth);
+    }
+};
+
+struct match_arrow_node
+{
+    // (lhs, rhs) = ("->", null) or ("-", "->") or ("--", null)
+    token const* lhs = nullptr;
+    token const* rhs = nullptr;
+    std::unique_ptr<match_edge_attrs_node> attrs = {};
+
+    auto visit(auto& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+        assert (attrs);
+        attrs->visit(v, depth + 1);
         v.end(*this, depth);
     }
 };
@@ -1730,16 +1822,26 @@ struct match_expression_node
 {
     match_compound_expression_node *const parent = nullptr;
 
-    std::vector<std::unique_ptr<match_primary_expression_node>> primary_expressions = {};
+    std::unique_ptr<match_node_node> node = {};
+    std::unique_ptr<match_arrow_node> arrow = {};
+    std::unique_ptr<match_expression_node> match = {};
+
+    // API
+
+    auto is_terminal()
+        -> bool
+    {
+        return node && !arrow && !match;
+    }
 
     auto visit(auto& v, int depth)
         -> void
     {
         v.start(*this, depth);
-        for (auto const &x : primary_expressions) {
-            assert (x);
-            x->visit(v, depth + 1);
-        }
+        assert (node);
+        node->visit(v, depth + 1);
+        assert (match);
+        match->visit(v, depth + 1);
         v.end(*this, depth);
     }
 };
@@ -1752,8 +1854,8 @@ struct match_compound_expression_node
     std::vector<std::unique_ptr<match_expression_node>> expressions;
 
     match_compound_expression_node(
-        source_position o = source_position{},
-        source_position c = source_position{}
+        source_position o = {},
+        source_position c = {}
     )
         : open_brace{o}, close_brace{c}
     { }
