@@ -1755,8 +1755,8 @@ struct match_node_node
     source_position open_paren;
     source_position close_paren;
     token const* label = nullptr;
-    source_position open_brace;
-    source_position close_brace;
+    // source_position open_brace;
+    // source_position close_brace;
     /// TODO: I don't think it should be an expression_list, check that
     std::unique_ptr<expression_list_node> attrs = {};
 
@@ -1797,8 +1797,8 @@ struct match_edge_attrs_node
     match_arrow_node const* parent = nullptr;
     source_position open_brace;
     source_position close_brace;
-    token *const lhs_attrs = nullptr;
-    token *const rhs_attrs = nullptr;
+    token const* lhs_attrs = nullptr;
+    token const* rhs_attrs = nullptr;
 
     match_edge_attrs_node(
         source_position o = {},
@@ -1818,7 +1818,7 @@ struct match_edge_attrs_node
 
 struct match_arrow_node
 {
-    // (lhs, rhs) = ("->", null) or ("-", "->") or ("--", null)
+    // (lhs, rhs) = ("->", null) or ("-", "->") or ("--", null) or ("-", "-")
     token const* lhs = nullptr;
     token const* rhs = nullptr;
     std::unique_ptr<match_edge_attrs_node> attrs = {};
@@ -6734,11 +6734,11 @@ private:
 
         if (
             curr().type() == lexeme::Colon
+            && peek(1)
             && peek(1)->type() == lexeme::LeftBrace
         ) {
             next();
-            n->open_brace = curr().position();
-            next();
+            // n->open_brace = curr().position();
             /// TODO: check that
             if (auto a = expression_list(&curr())) {
                 n->attrs = std::move(a);
@@ -6751,6 +6751,68 @@ private:
             return {};
         }
 
+        return n;
+    }
+
+
+    auto match_edge_attrs()
+        -> std::unique_ptr<match_edge_attrs_node>
+    {
+        auto n = std::make_unique<match_edge_attrs_node>(curr().position());
+        next();
+        if (
+            curr().type() != lexeme::DecimalLiteral
+            && curr().type() != lexeme::HexadecimalLiteral
+            && curr().type() != lexeme::BinaryLiteral
+        ) {
+            error("Edge attribute must be a literal", true, {}, true);
+            return {};
+        }
+        n->lhs_attrs = &curr();
+        next();
+        if (curr().type() == lexeme::RightBrace) {
+            n->close_brace = curr().position();
+            return n;
+        }
+        /// TODO: complete function
+        return {};
+    }
+
+
+    auto match_arrow()
+        -> std::unique_ptr<match_arrow_node>
+    {
+        if (
+            curr().type() != lexeme::Minus
+            && curr().type() != lexeme::MinusMinus
+            && curr().type() != lexeme::Arrow
+        ) {
+            return {};
+        }
+        auto n = std::make_unique<match_arrow_node>();
+        n->lhs = &curr();
+        if (
+            curr().type() == lexeme::MinusMinus
+            || curr().type() == lexeme::Arrow
+        ) {
+            // it is already complete
+            return n;
+        }
+        next();
+
+        if (curr().type() != lexeme::LeftBrace) {
+            return {};
+        }
+        if (auto e = match_edge_attrs()) {
+            n->attrs = std::move(e);
+        }
+        if (
+            curr().type() != lexeme::Arrow
+            && curr().type() != lexeme::Minus
+        ) {
+            return {};
+        }
+        n->rhs = &curr();
         return n;
     }
 
