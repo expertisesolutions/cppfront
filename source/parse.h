@@ -1758,7 +1758,7 @@ struct match_node_node
     source_position open_brace;
     source_position close_brace;
     /// TODO: I don't think it should be an expression_list, check that
-    std::unique_ptr<expression_list_node> attrs;
+    std::unique_ptr<expression_list_node> attrs = {};
 
     match_node_node(
         source_position o = {},
@@ -1767,7 +1767,13 @@ struct match_node_node
         : open_paren{o}, close_paren{c}
     { }
 
-    auto get_label()
+    auto has_attributes() const
+        -> bool
+    {
+        return static_cast<bool>(attrs);
+    }
+
+    auto get_label() const
         -> token const*
     {
         assert (label);
@@ -1789,6 +1795,17 @@ struct match_arrow_node;
 struct match_edge_attrs_node
 {
     match_arrow_node const* parent = nullptr;
+    source_position open_brace;
+    source_position close_brace;
+    token *const lhs_attrs = nullptr;
+    token *const rhs_attrs = nullptr;
+
+    match_edge_attrs_node(
+        source_position o = {},
+        source_position c = {}
+    )
+        : open_brace(o), close_brace(c)
+    { }
 
     auto visit(auto&v, int depth)
         -> void
@@ -1805,6 +1822,12 @@ struct match_arrow_node
     token const* lhs = nullptr;
     token const* rhs = nullptr;
     std::unique_ptr<match_edge_attrs_node> attrs = {};
+
+    auto has_attributes() const
+        -> bool
+    {
+        return static_cast<bool>(attrs);
+    }
 
     auto visit(auto& v, int depth)
         -> void
@@ -1880,8 +1903,17 @@ struct match_compound_expression_node
 
 struct match_statement_node
 {
-    token const* identifier = {};
-    std::unique_ptr<match_compound_expression_node> match_stmts;
+    token const* identifier = nullptr;
+    source_position open_brace;
+    source_position close_brace;
+    std::unique_ptr<match_compound_expression_node> match_stmts = {};
+
+    match_statement_node(
+        source_position o = {},
+        source_position c = {}
+    )
+        : open_brace{o}, close_brace{c}
+    { }
 
     auto position() const
         -> source_position
@@ -1894,11 +1926,9 @@ struct match_statement_node
         -> void
     {
         v.start(*this, depth);
-        assert (identifier);
-        v.start(*identifier, depth + 1);
         assert (match_stmts);
         match_stmts->visit(v, depth + 1);
-        v.end(*this.depth);
+        v.end(*this, depth);
     }
 };
 
@@ -6678,6 +6708,103 @@ private:
                 error("invalid else branch body", true, {}, true);
                 return {};
             }
+        }
+
+        return n;
+    }
+
+
+    //G match-node:
+    //G     '(' identifier (':' '{' match-node-attrs '}')? ')'
+    auto match_node()
+        -> std::unique_ptr<match_node_node>
+    {
+        if (curr().type() != lexeme::LeftParen) {
+            return {};
+        }
+        auto n = std::make_unique<match_node_node>();
+        n->open_paren = curr().position();
+        next();
+
+        if (curr().type() != lexeme::Identifier) {
+            return {};
+        }
+        n->label = &curr();
+        next();
+
+        if (
+            curr().type() == lexeme::Colon
+            && peek(1)->type() == lexeme::LeftBrace
+        ) {
+            next();
+            n->open_brace = curr().position();
+            next();
+            /// TODO: check that
+            if (auto a = expression_list(&curr())) {
+                n->attrs = std::move(a);
+            } else {
+                return {};
+            }
+        } else if (curr().type() == lexeme::RightParen) {
+            n->close_paren = curr().position();
+        } else {
+            return {};
+        }
+
+        return n;
+    }
+
+    //G match-expression:
+    //G     match-node
+    //G     match-node match-arrow match-expression
+    auto match_expression()
+        -> std::unique_ptr<match_expression_node>
+    {
+        return {};
+    }
+
+
+    //G match-compound-statement:
+    //G     match-expression;...
+    auto match_compound_expression()
+        -> std::unique_ptr<match_compound_expression_node>
+    {
+        return {};
+    }
+
+
+    //G match-statement:
+    //G     'match' match-compound-statement
+    auto match_statement()
+        -> std::unique_ptr<match_statement_node>
+    {
+        if (
+            curr().type() != lexeme::Keyword
+            || curr() != "match"
+        ) {
+            return {};
+        }
+        auto n = std::make_unique<match_statement_node>();
+        n->identifier = &curr();
+        next();
+
+        if (curr().type() != lexeme::LeftBrace) {
+            error("a match body must be enclosed with { }", true, {}, true);
+            return {};
+        }
+        n->open_brace = curr().position();
+        next();
+
+        if (auto c = match_compound_expression()) {
+            n->match_stmts = std::move(c);
+        } else {
+            error("invalid match body", true, {}, true);
+        }
+        next();
+
+        if (curr().type() != lexeme::RightBrace) {
+            error("a match body must be enclosed with { }", true, {}, true);
+            return {};
         }
 
         return n;
