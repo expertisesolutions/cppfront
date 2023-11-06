@@ -3,6 +3,7 @@
 
 #include "cpp2util.h"
 #include "lex.h"
+#include "parse.h"
 
 #include <algorithm>
 #include <cassert>
@@ -40,24 +41,14 @@ using relation = std::set<std::tuple<args...>>;
 
 size_t find_closing_paren(std::string_view);
 
-// Expands a match string literal to a full-on lambda object
+// Expands a match statement node to a full-on lambda object
 // Maybe struct with `operator()` ?
 struct match_generator {
-    constexpr static auto arrow_lexeme = std::string_view{"->"};
-    constexpr static auto or_lexeme = std::string_view{"|"};
-    constexpr static auto and_lexeme = std::string_view{";"};
-    constexpr static auto node_lexeme = std::string_view{"()"};
-    constexpr static auto node_attr_lexeme = std::string_view{"{}"};
-
     struct node {
+        /// TODO: should label be optional? Maybe '_' for anything
         std::optional<std::string> label;
-        std::vector<
-            std::variant<
-                std::monostate,
-                token
-            >
-        > attrs;
-        std::vector<node*> adj_nodes;
+        expression_list_node *attrs;
+        std::vector<size_t> adj_nodes;
 
         node() = default;
 
@@ -70,276 +61,64 @@ struct match_generator {
         { }
     };
 
-    std::string literal;
-    std::vector<std::string> parts = {};
-    std::vector<
-        std::tuple<
-            std::string_view,
-            const std::string*
-        >
-    > node_views = {};
-    std::vector<
-        std::tuple<
-            node,
-            std::string_view,
-            const std::string*
-        >
-    > nodes = {};
-    /// TODO: the following must be replaced by a non-const reference
-    /// (or non-const pointer)
-    std::vector<error_entry> errors = {};
+    std::vector<node> nodes = {};
+    /// TODO: if this is the case, then the member var "label" is unnecessary?
+    std::map<std::string_view, size_t> nodes_map = {};
+    std::vector<error_entry> &errors;
 
-    match_generator(const std::string &str)
-        : literal{str}
+    match_generator() = delete;
+
+    match_generator(
+        std::vector<error_entry> &e,
+        std::unique_ptr<match_statement_node> n
+    )
+        : errors{e}
     {
-        parse();
+        parse(n.get());
     }
 
 private:
-    void parse_nodes();
-
-    void parse_relations();
-
-    void get_nodes() {
-        // constexpr auto open_parens = std::array{'(', '[', '{'};
-        for (const auto &part : parts) {
-            for (size_t i = 0, size = part.size(); i < size; ++i) {
-                if (const auto ch = part[i];
-                    ch == node_lexeme[0]) {
-                    const auto *str_data = part.c_str() + i;
-                    if (const auto closing_paren_idx = find_closing_paren({str_data, size - i});
-                        closing_paren_idx != std::string_view::npos) {
-                        node_views.push_back({
-                            {str_data, closing_paren_idx + 1},
-                            &part
-                        });
-                    }
-                }
-            }
-        }
-
-        // for(const auto &node : node_views) {
-        //     std::cout << "node: " << node << std::endl;
-        // }
-    }
-
-    void get_parts() {
-        auto ss = std::stringstream{literal};
-        auto part = std::string{};
-
-        while (std::getline(ss, part, and_lexeme[0])) {
-            parts.push_back(part);
-        }
-    }
-
-    void parse() {
-        get_parts();
-        get_nodes();
-        parse_nodes();
-        parse_relations();
-    }
-
-};
-
-auto find_closing_paren(std::string_view sv)
-    -> size_t
-{
-    const auto open_close_paren_map = std::map<char, char>{
-        {'(', ')'}, {'[', ']'}, {'{', '}'}, {'"', '"'}
-    };
-    const auto open_paren = sv[0];
-    assert (open_close_paren_map.contains(open_paren));
-    const auto close_paren = open_close_paren_map.at(open_paren);
-    auto count_open_paren = 1;
-
-    for (size_t i = 1, size = sv.size(); i < size; ++i) {
-        if (sv[i] == open_paren) {
-            ++count_open_paren;
-        } else if (sv[i] == close_paren) {
-            --count_open_paren;
-        }
-        if (0 == count_open_paren) {
-            return i;
-        }
-    }
-
-    return std::string_view::npos;
-}
-
-auto parse_attr_list(
-    std::string_view sv,
-    std::vector<error_entry> &errors
-)
-    -> decltype(match_generator::node::attrs)
-{
-    using attrs_type = decltype(match_generator::node::attrs);
-    auto attrs = attrs_type{};
-
-    std::cout << "parse_attr_list(): sv " << sv << std::endl;
-
-    auto line = std::string{sv}, curr_comment = std::string{};
-    auto in_comment = false;
-    auto comment_pos = source_position{};
-    auto tokens = std::vector<token>{};
-    auto comments = std::vector<comment>{};
-    // auto errors = std::vector<error_entry>{};
-    auto rsm = std::optional<raw_string>{};
-
-    lex_line(line, 1, in_comment, curr_comment, comment_pos, tokens,
-             comments, errors, rsm);
-
-    if (line != sv) {
-        /// TODO: if string was changed, deal with that
-        std::cout << "line " << line << ", sv " << sv << std::endl;
-    } else {
-        // token string view must point to persistent string view
-        for (auto &t : tokens) {
-            t = token{
-                sv.data() + (t.as_string_view().data() - line.data()),
-                t.length(),
-                t.position(),
-                t.type()
-            };
-        }   
-    }
-
-    // Every token in-between should be alternating literal/identifier
-    // and comma. Should we allow for trailing commas?
-    auto it = tokens.cbegin();
-    const auto it_end = tokens.cend();
-    auto next_must_be_comma = false;
-    for (; it != it_end; ++it, next_must_be_comma = !next_must_be_comma) {
-        const auto type = it->type();
-        if (!next_must_be_comma) {
-            if (!is_literal(type) || type != lexeme::Identifier) {
-                errors.push_back(
-                    {   
-                        source_position{-1, -1},
-                        "Attribute should be wither a literal or identifier"
-                    }
-                );
-            }
-
-            attrs.push_back({*it});
-        } else {
-            if (type != lexeme::Comma) {
-                errors.push_back(
-                    {
-                        source_position{-1, -1},
-                        "There should be a comma after a literal or identifier list"
-                    }
-                );
-            }
-        }
-    }
-
-    return attrs;
-error:
-    return {};
-}
-
-auto parse_node(
-    std::string_view sv_node,
-    std::vector<error_entry> &errors
-)
-    -> match_generator::node
-{   
-    using attrs_type = decltype(match_generator::node::attrs);
-    // const auto str_node = std::string{sv_node};
-    const auto node_pat = std::regex{"^\\(([a-zA-Z_]\\w*)(:\\{(.*)\\})?\\)$"};
-    constexpr auto label_regex_idx = 1;
-    constexpr auto attr_regex_idx = 3;
-    auto match = std::cmatch{};
-
-    if (std::regex_search(sv_node.cbegin(), sv_node.cend(), match, node_pat)) {
-        for (auto i = 0; i < match.size(); ++i) {
-            std::cout << "match " << i << " " << match[i].str() << std::endl;
-        }
-        if (match.size() >= 4) {
-            return {
-                match[label_regex_idx].str(),
-                parse_attr_list(
-                    sv_node.substr(
-                        match.position(attr_regex_idx),
-                        match.length(attr_regex_idx)
-                    ),
-                    errors
-                )
-            };
-        } else {
-            return {match[1].str()};
-        }
-    }
-
-    return {};
-}
-
-void match_generator::parse_nodes()
-{
-    for (const auto &[nv, str] : node_views) {
-        nodes.push_back({
-            parse_node(nv, errors),
-            nv,
-            str
-        });
-    }
-}
-
-void match_generator::parse_relations()
-{
-    // struct cmp_string_view {
-    //     auto operator()(std::string_view lhs, std::string_view rhs) const
-    //         -> bool {
-    //         return lhs.data() < rhs.data();
-    //     }
-    // };
-    auto parts_view_node_map = std::map<
-        const std::string*,
-        std::vector<
-            std::tuple<
-                node*,
-                std::string_view
-            >
-        >
-    >{};
-    for (auto &[node, nv, str] : nodes) {
-        parts_view_node_map[str].push_back({&node, nv});
-    }
-
-    // checking whether the nodes in the parts are linked by arrow lexeme
-    for (const auto &[str, nodes] : parts_view_node_map) {
-        auto oss = std::ostringstream{};
-        auto sep = std::string_view{""};
-        std::cout << "*str " << *str << " nodes " << std::endl;
-        for (
-            auto it = nodes.begin(), it_end = nodes.end();
-            it != it_end;
-            ++it
+    void insert_node(match_node_node *mnn) {
+        /// TODO: check if it would be possible to use string view
+        auto label = mnn->get_label()->as_string_view();
+        if (
+            auto it = nodes_map.find(label);
+            it == nodes_map.end()
         ) {
-            auto *node = std::get<0>(*it);
-            const auto nv = std::get<1>(*it);
-            // std::cout << "\t" << *(node->label) << std::endl;
-            std::cout << "\t" << nv << std::endl;
-            if (
-                const auto next_it = std::next(it);
-                next_it != it_end
-            ) {
-                node->adj_nodes.push_back(std::get<0>(*next_it));
-            }
-            oss << sep << nv;
-            sep = arrow_lexeme;
-        }
-        if (*str != oss.str()) {
-            errors.push_back(
-                {
-                    source_position{-1, -1},
-                    "Link between nodes should be an arrow (`->`)"
+            nodes_map.emplace(label, nodes.size());
+            nodes.push_back({label, mnn->attrs.get()});
+        } else {
+            auto &n = nodes[it->second];
+            if (mnn->attrs) {
+                if (n.attrs) {
+                    /// TODO: attributes for node are defined more than once
+                    /// report that
+                } else {
+                    n.attrs = mnn->attrs.get();
                 }
-            );
-            return;
+            }
         }
     }
-}
+
+    void parse_match_expression(match_expression_node *men) {
+        assert (men);
+        assert (men->node);
+
+        do {
+            auto *node = men->node.get();
+            insert_node(node);
+        } while (!men->is_terminal());
+    }
+
+    void parse(match_statement_node *msn) {
+        assert (msn);
+        assert (msn->match_stmts);
+        const auto &exprs = msn->match_stmts->expressions;
+        for (const auto &expr : exprs) {
+
+        }
+    }
+};
 
 }
 
