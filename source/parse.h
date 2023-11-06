@@ -1872,23 +1872,7 @@ struct match_expression_node
 
 struct match_compound_expression_node
 {
-    source_position open_brace;
-    source_position close_brace;
-
-    std::vector<std::unique_ptr<match_expression_node>> expressions;
-
-    match_compound_expression_node(
-        source_position o = {},
-        source_position c = {}
-    )
-        : open_brace{o}, close_brace{c}
-    { }
-
-    auto position() const
-        -> source_position
-    {
-        return open_brace;
-    }
+    std::vector<std::unique_ptr<match_expression_node>> expression;
 
     auto visit(auto& v, int depth)
         -> void
@@ -6837,7 +6821,8 @@ private:
         return n;
     }
 
-
+    //G match-edge-attrs
+    //G     '{' number-literal '}'
     auto match_edge_attrs()
         -> std::unique_ptr<match_edge_attrs_node>
     {
@@ -6861,7 +6846,10 @@ private:
         return {};
     }
 
-
+    //G match-arrow?
+    //G     ->
+    //G     --
+    //G     -{literal?}->
     auto match_arrow()
         -> std::unique_ptr<match_arrow_node>
     {
@@ -6936,7 +6924,21 @@ private:
     auto match_compound_expression()
         -> std::unique_ptr<match_compound_expression_node>
     {
-        return {};
+        auto n = std::make_unique<match_compound_expression_node>();
+        auto e = std::unique_ptr<match_expression_node>{};
+        while (e = match_expression()) {
+            n->expressions.push_back(std::move(e));
+            if (curr().type() != lexeme::Semicolon) {
+                error("match expressions must end with ';'", true, {}, true);
+                return {};
+            }
+            if (peek(1)) {
+                next();
+            } else {
+                break;
+            }
+        }
+        return n;
     }
 
 
@@ -6966,14 +6968,13 @@ private:
             n->match_stmts = std::move(c);
         } else {
             error("invalid match body", true, {}, true);
+            return {};
         }
-        next();
 
         if (curr().type() != lexeme::RightBrace) {
             error("a match body must be enclosed with { }", true, {}, true);
             return {};
         }
-
         return n;
     }
 
