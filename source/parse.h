@@ -6713,7 +6713,6 @@ private:
         return n;
     }
 
-
     //G match-node:
     //G     '(' identifier (':' '{' match-node-attrs '}')? ')'
     auto match_node()
@@ -6737,16 +6736,21 @@ private:
             && peek(1)
             && peek(1)->type() == lexeme::LeftBrace
         ) {
-            next();
             // n->open_brace = curr().position();
-            /// TODO: check that
-            if (auto a = expression_list(&curr())) {
+            auto open_brace = peek(1);
+            next(2);
+            if (auto a = expression_list(open_brace)) {
                 n->attrs = std::move(a);
+                n->attrs->close_paren = &curr();
+                next();
             } else {
                 return {};
             }
-        } else if (curr().type() == lexeme::RightParen) {
+        }
+        
+        if (curr().type() == lexeme::RightParen) {
             n->close_paren = curr().position();
+            next();
         } else {
             return {};
         }
@@ -6796,6 +6800,7 @@ private:
             || curr().type() == lexeme::Arrow
         ) {
             // it is already complete
+            next();
             return n;
         }
         next();
@@ -6813,6 +6818,7 @@ private:
             return {};
         }
         n->rhs = &curr();
+        next();
         return n;
     }
 
@@ -6822,7 +6828,27 @@ private:
     auto match_expression()
         -> std::unique_ptr<match_expression_node>
     {
-        return {};
+        auto v = match_node();
+        if (!v) {
+            return {};
+        }
+        auto n = std::make_unique<match_expression_node>();
+        n->node = std::move(v);
+        auto *curr_n = &n;
+
+        auto a = std::unique_ptr<match_arrow_node>{};
+        while (a = match_arrow()) {
+            (*curr_n)->arrow = std::move(a);
+            if (auto new_n = match_node()) {
+                (*curr_n)->match = std::make_unique<match_expression_node>();
+                (*curr_n)->match->node = std::move(new_n);
+                curr_n = &(*curr_n)->match;
+            } else {
+                error("an arrow must be followed by a node", true, {}, true);
+                return {};
+            }
+        }
+        return n;
     }
 
 
@@ -6871,7 +6897,6 @@ private:
 
         return n;
     }
-
 
     //G return-statement:
     //G     return expression? ';'
