@@ -1872,7 +1872,7 @@ struct match_expression_node
 
 struct match_compound_expression_node
 {
-    std::vector<std::unique_ptr<match_expression_node>> expression;
+    std::vector<std::unique_ptr<match_expression_node>> expressions;
 
     auto visit(auto& v, int depth)
         -> void
