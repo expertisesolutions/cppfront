@@ -63,7 +63,8 @@ struct match_generator {
 
     std::vector<node> nodes = {};
     /// TODO: if this is the case, then the member var "label" is unnecessary?
-    std::map<std::string_view, size_t> nodes_map = {};
+    std::unordered_map<std::string_view, size_t> nodes_map = {};
+    std::map<std::tuple<size_t, size_t>, std::optional<size_t>> edges_attrs_map;
     std::vector<error_entry> &errors;
 
     match_generator() = delete;
@@ -78,15 +79,17 @@ struct match_generator {
     }
 
 private:
-    void insert_node(match_node_node *mnn) {
-        /// TODO: check if it would be possible to use string view
-        auto label = mnn->get_label()->as_string_view();
+    void insert_node(match_node_node *const mnn) {
+        if (!mnn) {
+            return;
+        }
+        const auto label = mnn->get_label()->as_string_view();
         if (
-            auto it = nodes_map.find(label);
+            const auto it = nodes_map.find(label);
             it == nodes_map.end()
         ) {
             nodes_map.emplace(label, nodes.size());
-            nodes.push_back({label, mnn->attrs.get()});
+            nodes.emplace_back(label, mnn->attrs.get());
         } else {
             auto &n = nodes[it->second];
             if (mnn->attrs) {
@@ -100,14 +103,64 @@ private:
         }
     }
 
+    auto insert_edge(
+        match_node_node *const mnn1,
+        match_node_node *const mnn2
+    )
+        -> std::optional<std::tuple<size_t, size_t>>
+    {
+        if (!mnn1 || !mnn2) {
+            return {};
+        }
+        const auto label1 = mnn1->get_label()->as_string_view();
+        const auto label2 = mnn2->get_label()->as_string_view();
+
+        const auto it1 = nodes_map.find(label1);
+        const auto it2 = nodes_map.find(label2);
+        const auto end = nodes_map.end();
+
+        if (it1 != end && it2 != end) {
+            nodes[it1->second].adj_nodes.push_back(it2->second);
+        } else {
+            /// TODO: should we find out which one(s) is(are) missing
+            /// and insert the node(s)?
+        }
+
+        return {{it1->second, it2->second}};
+    }
+
+    void insert_edge(match_expression_node *const men) {
+        assert (men);
+        assert (men->node);
+        assert (men->arrow);
+        assert (men->match);
+        assert (men->match->node);
+
+        const auto idxs_opt = insert_edge(men->node.get(), men->match->node.get());
+        if (idxs_opt) {
+            const auto it = edges_attrs_map.find(*idxs_opt);
+            if (it != edges_attrs_map.end()) {
+                /// TODO: there already exists an edge with attributes,
+                /// should we report or update that?
+            } else {
+                /// TODO: parse attributes from men->arrow->attrs
+                edges_attrs_map.emplace(*idxs_opt, std::nullopt);
+            }
+        }
+    }
+
     void parse_match_expression(match_expression_node *men) {
         assert (men);
         assert (men->node);
+        match_node_node *prev_node = nullptr;
 
         do {
             auto *node = men->node.get();
             insert_node(node);
-        } while (!men->is_terminal());
+            insert_edge(prev_node, node);
+            prev_node = node;
+            men = men->next();
+        } while (men != nullptr);
     }
 
     void parse(match_statement_node *msn) {
@@ -115,7 +168,7 @@ private:
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;
         for (const auto &expr : exprs) {
-
+            parse_match_expression(expr.get());
         }
     }
 };
