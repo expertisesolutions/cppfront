@@ -259,6 +259,51 @@ private:
         }
         const auto fill_out_pattern_nodes = oss.str();
 
+        constexpr auto fill_out_anc_desc =
+            "for (const auto [edge, edge_value] : pattern_edges_map) {\n"
+            "   const auto [ip_, ip] = edge;\n"
+            "   const auto &u_prime = pattern_nodes[ip_];\n"
+            "   const auto &u = pattern_nodes[ip];\n"
+            "   for (size_t i = 0; i < graph_size; ++i) {\n"
+            "       const auto &v_attrs = get_attrs(g, i);\n"
+            "       if (match(std::get<1>(u), v_attrs)) {\n"
+            "           for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
+            "               const auto &v_prime_attrs = get_attrs(g, i_);\n"
+            "               if (\n"
+            "                   const auto dist = X[i_][i];\n"
+            "                   (\n"
+            "                       !edge_value || (\n"
+            "                           edge_value &&\n"
+            "                           dist &&\n"
+            "                           *dist <= *edge_value\n"
+            "                       )\n"
+            "                   ) && match(std::get<1>(u_prime), v_prime_attrs)\n"
+            "               ) {\n"
+            "                   anc[{i, ip_, ip}].insert(i_);\n"
+            "               }\n"
+            "           }\n"
+            "       }\n"
+            "       if (match(std::get<1>(u_prime), v_attrs)) {\n"
+            "           for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
+            "               const auto v_prime_attrs = get_attrs(g, i_);\n"
+            "               if (\n"
+            "                   const auto dist = X[i][i_];\n"
+            "                   (\n"
+            "                       !edge_value || (\n"
+            "                           edge_value &&\n"
+            "                           dist &&\n"
+            "                           *dist <= *edge_value\n"
+            "                       )\n"
+            "                   ) && match(std::get<1>(u), v_prime_attrs)\n"
+            "               ) {\n"
+            "                   desc[{i, ip_, ip}].insert(i_);\n"
+            "               }\n"
+            "           }\n"
+            "       }\n"
+            "   }\n"
+            "}\n"
+            ""sv;
+
         return oss.str();
     }
 };
@@ -870,8 +915,8 @@ auto bounded_simulation_match(
     // For each edge (u', u) in Ep
     for (const auto &[edge, edge_value] : pat_edges) {
         const auto [ip_, ip] = edge;
-        const auto u_prime = pat.get_node(ip_);
-        const auto u = pat.get_node(ip);
+        const auto &u_prime = pat.get_node(ip_);
+        const auto &u = pat.get_node(ip);
 
         // and each v in V
         for (size_t i = 0; i < graph_size; ++i) {
@@ -961,7 +1006,7 @@ auto bounded_simulation_match(
                             mat_u_range.cbegin(),
                             mat_u_range.cend(),
                             [&X, &u_prime, &v_prime, i_, value](const auto i) {
-                                // const auto v = grp.get_node(i);
+                                // const auto &v = grp.get_node(i);
                                 const auto dist = X[i_][i];
                                 return match<at, pt>(u_prime, v_prime) &&
                                     (
