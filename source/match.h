@@ -34,6 +34,18 @@ LITERAL -> rex [0-9]*\.?[0-9]+ | rex "[^"]*" | ...
 CAPTURE -> '$' (todo...)
 */
 
+namespace std {
+
+auto to_string(const cpp2::expression_list_node &eln)
+    -> std::string
+{
+    /// TODO: fill out stuff here
+    /// maybe use a visitor?
+    return {};
+}
+
+}
+
 namespace cpp2 {
 
 template <typename ...args>
@@ -167,8 +179,18 @@ private:
         assert (msn);
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;
+        auto i = 0;
         for (const auto &expr : exprs) {
+            std::cout << "Parsing match expression " << ++i << std::endl;
             parse_match_expression(expr.get());
+        }
+        i = 0;
+        for (const auto &n : nodes) {
+            std::cout << "node " << i++ << ", " << *n.label << std::endl;
+            std::cout << "sons\n";
+            for (const auto s : n.adj_nodes) {
+                std::cout << "\t" << s << ", " << *nodes[s].label << std::endl;
+            }
         }
     }
 
@@ -176,15 +198,66 @@ private:
         -> std::string
     {
         using namespace std::literals::string_view_literals;
+        using namespace std::literals::string_literals;
         
         auto oss = std::ostringstream{};
-        constexpr auto header_and_captures = "[&](auto &&g){"sv;
+        constexpr auto header_and_captures =
+            "[&](auto &&g){\n"
+            ""sv;
         constexpr auto type_definitions =
-            "using graph_attrs = decltype(get_attrs(g, 0));"
-            "using graph_adj_list = decltype(get_adj_list(g, 0));"
-            "using graph_attrs_pred = decltype(trivial_attrs_pred(g));"sv;
+            "using graph_attrs = decltype(get_attrs(g, 0));\n"
+            "using graph_adj_list = decltype(get_adj_list(g, 0));\n"
+            "using graph_attrs_pred = decltype(trivial_attrs_pred(g));\n"
+            "template <...args> using relation = std::set<std::tuple<args...>>;\n"
+            ""sv;
         constexpr auto match_lambda_definition =
-            "auto match = [](graph_attrs_pred &&pred, auto &&n){ return pred(n); };"sv;
+            "auto match = [](graph_attrs_pred &&pred, auto &&attrs){ return pred(attrs); };\n"
+            ""sv;
+        constexpr auto distance_matrix =
+            "const auto X = create_distance_matrix(g);\n"
+            ""sv;
+        constexpr auto define_anc_desc =
+            "auto anc = std::map<std::tuple<size_t, size_t, size_t>, std::set<size_t>>{};\n"
+            "auto desc = decltype(anc){};\n"
+            ""sv;
+        constexpr auto define_mat_premv =
+            "auto mat = std::map<size_t, std::set<size_t>>{};\n"
+            "auto premv = decltype(mat){};\n"
+            ""sv;
+        constexpr auto define_graph_size =
+            "const auto graph_size = get_size(g);\n"
+            ""sv;
+        const auto define_pattern_size =
+            "const auto pattern_size = "s + std::to_string(nodes.size()) + ";\n"s;
+        constexpr auto define_pattern_edges_map =
+            "auto pattern_edges_map = std::map<std::tuple<size_t, size_t>, std::optional<int>>{};\n"
+            ""sv;
+        
+        oss.str("");
+        for (const auto [edge, attrs] : edges_attrs_map) {
+            const auto [source, sink] = edge;
+            oss << "pattern_edges_map.emplace({" << std::to_string(source) << ", "
+                << std::to_string(sink) << "}, "
+                << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << ");\n";
+        }
+        const auto fill_out_edges_map = oss.str();
+
+        constexpr auto define_pattern_nodes =
+            "auto pattern_nodes = std::vector<std::tuple<std::vector<size_t>, graph_attrs_pred>>;\n"
+            ""sv;
+
+        oss.str("");
+        for (const auto &n : nodes) {
+            oss << "pattern_nodes.emplace_back({";
+            const char *sep = "";
+            for (const auto adj : n.adj_nodes) {
+                oss << sep << std::to_string(adj);
+                sep = ", ";
+            }
+            /// TODO: forward node attributes
+            oss << "}, {" << std::to_string(*n.attrs) << "});\n";
+        }
+        const auto fill_out_pattern_nodes = oss.str();
 
         return oss.str();
     }
