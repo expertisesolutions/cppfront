@@ -71,11 +71,11 @@ struct match_generator {
 
     match_generator(
         std::vector<error_entry> &e,
-        std::unique_ptr<match_statement_node> n
+        match_statement_node *n
     )
         : errors{e}
     {
-        parse(n.get());
+        parse(n);
     }
 
 private:
@@ -163,13 +163,30 @@ private:
         } while (men != nullptr);
     }
 
-    void parse(match_statement_node *msn) {
+    void parse(match_statement_node *const msn) {
         assert (msn);
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;
         for (const auto &expr : exprs) {
             parse_match_expression(expr.get());
         }
+    }
+
+    auto generate()
+        -> std::string
+    {
+        using namespace std::literals::string_view_literals;
+        
+        auto oss = std::ostringstream{};
+        constexpr auto header_and_captures = "[&](auto &&g){"sv;
+        constexpr auto type_definitions =
+            "using graph_attrs = decltype(get_attrs(g, 0));"
+            "using graph_adj_list = decltype(get_adj_list(g, 0));"
+            "using graph_attrs_pred = decltype(trivial_attrs_pred(g));"sv;
+        constexpr auto match_lambda_definition =
+            "auto match = [](graph_attrs_pred &&pred, auto &&n){ return pred(n); };"sv;
+
+        return oss.str();
     }
 };
 
