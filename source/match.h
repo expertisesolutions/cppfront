@@ -133,6 +133,11 @@ private:
 
         if (it1 != end && it2 != end) {
             nodes[it1->second].adj_nodes.push_back(it2->second);
+            /// TODO: should we add the edge attributes here?
+            edges_attrs_map.emplace(
+                std::tuple{it1->second, it2->second},
+                std::optional<size_t>{1}
+            );
         } else {
             /// TODO: should we find out which one(s) is(are) missing
             /// and insert the node(s)?
@@ -194,6 +199,7 @@ private:
         }
     }
 
+public:
     auto generate()
         -> std::string
     {
@@ -202,13 +208,13 @@ private:
         
         auto oss = std::ostringstream{};
         constexpr auto header_and_captures =
-            "[&](auto &&g){\n"
+            "[&](auto &&g) {\n"
             ""sv;
         constexpr auto type_definitions =
             "using graph_attrs = decltype(get_attrs(g, 0));\n"
             "using graph_adj_list = decltype(get_adj_list(g, 0));\n"
             "using graph_attrs_pred = decltype(trivial_attrs_pred(g));\n"
-            "template <...args> using relation = std::set<std::tuple<args...>>;\n"
+            "// template <...args> using relation = std::set<std::tuple<args...>>;\n"
             ""sv;
         constexpr auto match_lambda_definition =
             "auto match = [](graph_attrs_pred &&pred, auto &&attrs){ return pred(attrs); };\n"
@@ -228,7 +234,7 @@ private:
             "const auto graph_size = get_size(g);\n"
             ""sv;
         const auto define_pattern_size =
-            "const auto pattern_size = "s + std::to_string(nodes.size()) + ";\n"s;
+            "constexpr auto pattern_size = std::size_t{"s + std::to_string(nodes.size()) + "};\n"s;
         constexpr auto define_pattern_edges_map =
             "auto pattern_edges_map = std::map<std::tuple<size_t, size_t>, std::optional<int>>{};\n"
             ""sv;
@@ -236,73 +242,137 @@ private:
         oss.str("");
         for (const auto [edge, attrs] : edges_attrs_map) {
             const auto [source, sink] = edge;
-            oss << "pattern_edges_map.emplace({" << std::to_string(source) << ", "
+            oss << "pattern_edges_map.insert({{" << std::to_string(source) << ", "
                 << std::to_string(sink) << "}, "
-                << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << ");\n";
+                << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << "});\n";
         }
         const auto fill_out_edges_map = oss.str();
 
         constexpr auto define_pattern_nodes =
-            "auto pattern_nodes = std::vector<std::tuple<std::vector<size_t>, graph_attrs_pred>>;\n"
+            "auto pattern_nodes = std::vector<std::tuple<std::vector<size_t>, graph_attrs_pred>>{};\n"
             ""sv;
 
         oss.str("");
         for (const auto &n : nodes) {
-            oss << "pattern_nodes.emplace_back({";
+            oss << "pattern_nodes.push_back({{";
             const char *sep = "";
             for (const auto adj : n.adj_nodes) {
                 oss << sep << std::to_string(adj);
                 sep = ", ";
             }
             /// TODO: forward node attributes
-            oss << "}, {" << std::to_string(*n.attrs) << "});\n";
+            oss << "}, {" << std::to_string(*n.attrs) << "}});\n";
         }
         const auto fill_out_pattern_nodes = oss.str();
 
         constexpr auto fill_out_anc_desc =
             "for (const auto [edge, edge_value] : pattern_edges_map) {\n"
-            "   const auto [ip_, ip] = edge;\n"
-            "   const auto &u_prime = pattern_nodes[ip_];\n"
-            "   const auto &u = pattern_nodes[ip];\n"
-            "   for (size_t i = 0; i < graph_size; ++i) {\n"
-            "       const auto &v_attrs = get_attrs(g, i);\n"
-            "       if (match(std::get<1>(u), v_attrs)) {\n"
-            "           for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
-            "               const auto &v_prime_attrs = get_attrs(g, i_);\n"
-            "               if (\n"
-            "                   const auto dist = X[i_][i];\n"
-            "                   (\n"
-            "                       !edge_value || (\n"
-            "                           edge_value &&\n"
-            "                           dist &&\n"
-            "                           *dist <= *edge_value\n"
-            "                       )\n"
-            "                   ) && match(std::get<1>(u_prime), v_prime_attrs)\n"
-            "               ) {\n"
-            "                   anc[{i, ip_, ip}].insert(i_);\n"
-            "               }\n"
-            "           }\n"
-            "       }\n"
-            "       if (match(std::get<1>(u_prime), v_attrs)) {\n"
-            "           for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
-            "               const auto v_prime_attrs = get_attrs(g, i_);\n"
-            "               if (\n"
-            "                   const auto dist = X[i][i_];\n"
-            "                   (\n"
-            "                       !edge_value || (\n"
-            "                           edge_value &&\n"
-            "                           dist &&\n"
-            "                           *dist <= *edge_value\n"
-            "                       )\n"
-            "                   ) && match(std::get<1>(u), v_prime_attrs)\n"
-            "               ) {\n"
-            "                   desc[{i, ip_, ip}].insert(i_);\n"
-            "               }\n"
-            "           }\n"
-            "       }\n"
-            "   }\n"
+            "    const auto [ip_, ip] = edge;\n"
+            "    const auto &u_prime = pattern_nodes[ip_];\n"
+            "    const auto &u = pattern_nodes[ip];\n"
+            "    for (size_t i = 0; i < graph_size; ++i) {\n"
+            "        const auto &v_attrs = get_attrs(g, i);\n"
+            "        if (match(std::get<1>(u), v_attrs)) {\n"
+            "            for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
+            "                const auto &v_prime_attrs = get_attrs(g, i_);\n"
+            "                if (\n"
+            "                    const auto dist = X[i_][i];\n"
+            "                    (\n"
+            "                        !edge_value || (\n"
+            "                            edge_value &&\n"
+            "                            dist &&\n"
+            "                            *dist <= *edge_value\n"
+            "                        )\n"
+            "                    ) && match(std::get<1>(u_prime), v_prime_attrs)\n"
+            "                ) {\n"
+            "                    anc[{i, ip_, ip}].insert(i_);\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "        if (match(std::get<1>(u_prime), v_attrs)) {\n"
+            "            for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
+            "                const auto v_prime_attrs = get_attrs(g, i_);\n"
+            "                if (\n"
+            "                    const auto dist = X[i][i_];\n"
+            "                    (\n"
+            "                        !edge_value || (\n"
+            "                            edge_value &&\n"
+            "                            dist &&\n"
+            "                            *dist <= *edge_value\n"
+            "                        )\n"
+            "                    ) && match(std::get<1>(u), v_prime_attrs)\n"
+            "                ) {\n"
+            "                    desc[{i, ip_, ip}].insert(i_);\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
             "}\n"
             ""sv;
+
+        constexpr auto fill_out_mat_premv =
+            "for (size_t ip = 0; ip < pattern_size; ++ip) {\n"
+            "    const auto &u = pattern_nodes[ip];\n"
+            "    for (size_t i = 0; i < graph_size; ++i) {\n"
+            "        const auto &v_attrs = get_attrs(g, i);\n"
+            "        if (match(std::get<1>(u, v_attrs))) {\n"
+            "            if (\n"
+            "                std::get<0>(u).size() == 0 ||\n"
+            "                std::size(get_adj_list(g, i)) != 0\n"
+            "            ) {\n"
+            "                mat[ip].insert(i);\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
+            "        const auto &v_prime_attrs = get_attrs(g, i_);\n"
+            "        if (std::size(get_adj_list(g, i_)) != 0) {\n"
+            "            const auto it = std::find_if(\n"
+            "                pattern_edges_map.begin(),\n"
+            "                pattern_edges_map.end(),\n"
+            "                [&pattern_nodes, &mat, &X, &match, ip, i_](auto &&edge_value_pair) {\n"
+            "                    const auto [edge, value] = edge_value_pair;\n"
+            "                    if (std::get<1>(edge) != ip) {\n"
+            "                        return false;\n"
+            "                    }\n"
+            "                    const auto ip_ = std::get<0>(edge);\n"
+            "                    const auto &u_prime = pattern_nodes[ip_];\n"
+            "                    const auto &mat_u_range = mat[ip];\n"
+            "                    const auto it = std::find_if(\n"
+            "                        mat_u_range.cbegin(),\n"
+            "                        mat_u_range.cend(),\n"
+            "                        [&X, &u_prime, &match, &v_prime_attrs, i_, value](const auto i) {\n"
+            "                            const auto dist = X[i_][i];\n"
+            "                            return match(std::get<1>(u_prime), v_prime_attrs) &&\n"
+            "                                (\n"
+            "                                    !value ||\n"
+            "                                    (value && dist && *dist <= *value)\n"
+            "                                );\n"
+            "                        }\n"
+            "                    );\n"
+            "                    return it != mat_u_range.cend();\n"
+            "                }\n"
+            "            );\n"
+            "            if (it == pattern_edges_map.end()) {\n"
+            "                premv[ip].insert(i_);\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            ""sv;
+
+        constexpr auto end_of_lambda =
+            "};\n"
+            ""sv;
+
+        oss.str("");
+        oss << header_and_captures
+            << type_definitions << match_lambda_definition
+            << distance_matrix << define_anc_desc << define_mat_premv
+            << define_graph_size << define_pattern_size << define_pattern_edges_map
+            << fill_out_edges_map << define_pattern_nodes << fill_out_pattern_nodes
+            << fill_out_anc_desc << fill_out_mat_premv
+            << end_of_lambda;
 
         return oss.str();
     }
