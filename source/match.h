@@ -361,6 +361,84 @@ public:
             "}\n"
             ""sv;
 
+        constexpr auto main_loop_condition_function =
+            "auto loop_cond = [&premv, pattern_size]() {\n"
+            "    const auto it = std::find_if(\n"
+            "        premv.begin(),\n"
+            "        premv.end(),\n"
+            "        [](auto &&u_premv_u_pair) {\n"
+            "            return !u_premv_u_pair.second.empty();\n"
+            "        }\n"
+            "    );\n"
+            "    return it != premv.end() ?\n"
+            "        std::optional<size_t>{it->first} :\n"
+            "        std::optional<size_t>{};\n"
+            "};\n"
+            ""sv;
+
+        constexpr auto main_loop =
+            "auto ip_opt = decltype(loop_cond()){};\n"
+            "while (ip_opt = loop_cond()) {\n"
+            "    const auto ip = *ip_opt;\n"
+            "    for (const auto &[edge, value] : pattern_edges_map) {\n"
+            "        if (std::get<1>(edge) != ip)\n"
+            "            continue;\n"
+            "        const auto ip_ = std::get<0>(edge);\n"
+            "        const auto &premv_u_range = premv[ip];\n"
+            "        for (const auto i1 : premv_u_range) {\n"
+            "            if (mat[ip_].contains(i1)) {\n"
+            "                mat[ip_].erase(i1);\n"
+            "                if (mat[ip_].empty())\n"
+            "                    return {};\n"
+            "                for (const auto &[edge, value] : pattern_edges_map) {\n"
+            "                    if (std::get<1>(edge) != ip_)\n"
+            "                        continue;\n"
+            "                    const auto ip__ = std::get<0>(edge);\n"
+            "                    const auto &anc_v1_u_prime_prime_u_prime_range = anc[{i1, ip__, ip_}];\n"
+            "                    const auto &prevm_u_prime_range = premv[ip_];\n"
+            "                    auto diff = std::vector<size_t>{};\n"
+            "                    std::set_difference(\n"
+            "                        anc_v1_u_prime_prime_u_prime_range.cbegin(),\n"
+            "                        anc_v1_u_prime_prime_u_prime_range.cend(),\n"
+            "                        prevm_u_prime_range.cbegin(),\n"
+            "                        prevm_u_prime_range.cend(),\n"
+            "                        std::inserter(diff, diff.begin())\n"
+            "                    );\n"
+            "                    for (const auto i1_ : diff) {\n"
+            "                        const auto &desc_v1_prime_u_prime_prime_u_prime_range\n"
+            "                            = desc[{i1_, ip__, ip_}];\n"
+            "                        const auto &mat_u_prime_range = mat[ip_];\n"
+            "                        auto intersec = std::vector<size_t>{};\n"
+            "                        std::set_intersection(\n"
+            "                            desc_v1_prime_u_prime_prime_u_prime_range.cbegin(),\n"
+            "                            desc_v1_prime_u_prime_prime_u_prime_range.cend(),\n"
+            "                            mat_u_prime_range.cbegin(),\n"
+            "                            mat_u_prime_range.cend(),\n"
+            "                            std::inserter(intersec, intersec.begin())\n"
+            "                        );\n"
+            "                        if (intersec.empty()) {\n"
+            "                            premv[ip_].insert(i1_);\n"
+            "                        }\n"
+            "                    }\n"
+            "                }\n"
+            "             }\n"
+            "        }\n"
+            "    }\n"
+            "    premv[ip].clear();\n"
+            "}\n"
+            ""sv;
+
+        constexpr auto relation_and_return =
+            "auto S = std::set<std::tuple<size_t, size_t>>{};\n"
+            "for (size_t ip = 0; ip < pattern_size; ++ip) {\n"
+            "    const auto &mat_u_range = mat[ip];\n"
+            "    for (const auto i : mat_u_range) {\n"
+            "        S.emplace(ip, i);\n"
+            "    }\n"
+            "}\n"
+            "return S;\n"
+            ""sv;
+
         constexpr auto end_of_lambda =
             "};\n"
             ""sv;
@@ -368,10 +446,15 @@ public:
         oss.str("");
         oss << header_and_captures
             << type_definitions << match_lambda_definition
-            << distance_matrix << define_anc_desc << define_mat_premv
-            << define_graph_size << define_pattern_size << define_pattern_edges_map
-            << fill_out_edges_map << define_pattern_nodes << fill_out_pattern_nodes
-            << fill_out_anc_desc << fill_out_mat_premv
+            << distance_matrix
+            << define_anc_desc << define_mat_premv
+            << define_graph_size << define_pattern_size
+            << define_pattern_edges_map << fill_out_edges_map
+            << define_pattern_nodes << fill_out_pattern_nodes
+            << fill_out_anc_desc
+            << fill_out_mat_premv
+            << main_loop_condition_function << main_loop
+            << relation_and_return
             << end_of_lambda;
 
         return oss.str();
