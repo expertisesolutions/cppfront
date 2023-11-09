@@ -16,6 +16,7 @@
 //===========================================================================
 
 #include "sema.h"
+#include "match.h"
 #include <iostream>
 #include <cstdio>
 #include <optional>
@@ -230,7 +231,9 @@ public:
     enum phases {
         phase0_type_decls           = 0,
         phase1_type_defs_func_decls = 1,
-        phase2_func_defs            = 2
+        phase2_func_defs            = 2,
+        /// TODO: check whether it is necessary an additional phase
+        phase3_match_defs           = 3
     };
     auto get_phase() const { return phase; }
 
@@ -241,6 +244,7 @@ private:
         switch (phase) {
         break;case phase0_type_decls          : phase = phase1_type_defs_func_decls;
         break;case phase1_type_defs_func_decls: phase = phase2_func_defs;
+        break;case phase2_func_defs           : phase = phase3_match_defs;
         break;default                         : assert(!"ICE: invalid lowering phase");
         }
         curr_pos     = {};
@@ -3729,6 +3733,20 @@ public:
         }
     }
 
+    //-----------------------------------------------------------------------
+    //
+    auto emit(match_statement_node const& n)
+        -> void
+    {
+        if (!sema.check(n)) {
+            return;
+        }
+
+        auto mg = match_generator{errors, &n};
+        printer.print_cpp2("[&](auto &&g) { return true; }", n.position());
+        // printer.print_cpp2(mg.generate(), n.position());
+    }
+
 
     //-----------------------------------------------------------------------
     //
@@ -3799,6 +3817,7 @@ public:
         try_emit<statement_node::contract   >(n.statement);
         try_emit<statement_node::inspect    >(n.statement, false);
         try_emit<statement_node::jump       >(n.statement);
+        try_emit<statement_node::match      >(n.statement);
 
         printer.preempt_position_pop();
 

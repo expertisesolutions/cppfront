@@ -1005,6 +1005,7 @@ public:
             n.is_object()
             && n.initializer
             && !n.initializer->is_expression()
+            && !n.initializer->is_match()
             )
         {
             errors.emplace_back(
@@ -1519,6 +1520,13 @@ public:
     }
 
 
+    auto check(match_statement_node const& n)
+        -> bool
+    {
+        /// TODO: dummy. Make the correct semantics checks
+        return true;
+    }
+
     //-----------------------------------------------------------------------
     //  Visitor functions
     //
@@ -1790,6 +1798,14 @@ public:
 
     auto start(postfix_expression_node const&, int) {
         started_postfix_expression = true;
+    }
+
+    auto start(match_statement_node const& n, int) -> void {
+        std::cout << "Visited a match statement node" << std::endl;
+    }
+
+    auto end(match_statement_node const&n, int) -> void {
+        std::cout << "Visit went alright, thanks" << std::endl;
     }
 
     auto start(auto const&, int) -> void
