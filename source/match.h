@@ -83,7 +83,7 @@ struct match_generator {
 
     match_generator(
         std::vector<error_entry> &e,
-        match_statement_node *n
+        match_statement_node const* n
     )
         : errors{e}
     {
@@ -91,7 +91,7 @@ struct match_generator {
     }
 
 private:
-    void insert_node(match_node_node *const mnn) {
+    void insert_node(match_node_node const* const mnn) {
         if (!mnn) {
             return;
         }
@@ -146,7 +146,7 @@ private:
         return {{it1->second, it2->second}};
     }
 
-    void insert_edge(match_expression_node *const men) {
+    void insert_edge(match_expression_node const* const men) {
         assert (men);
         assert (men->node);
         assert (men->arrow);
@@ -166,7 +166,7 @@ private:
         }
     }
 
-    void parse_match_expression(match_expression_node *men) {
+    void parse_match_expression(match_expression_node const* men) {
         assert (men);
         assert (men->node);
         match_node_node *prev_node = nullptr;
@@ -180,7 +180,7 @@ private:
         } while (men != nullptr);
     }
 
-    void parse(match_statement_node *const msn) {
+    void parse(match_statement_node const* const msn) {
         assert (msn);
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;

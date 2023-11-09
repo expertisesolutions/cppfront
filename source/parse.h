@@ -1787,8 +1787,8 @@ struct match_expression_node
         return node && !arrow && !match;
     }
 
-    auto next()
-        -> match_expression_node*
+    auto next() const
+        -> match_expression_node const*
     {
         return match.get();
     }
