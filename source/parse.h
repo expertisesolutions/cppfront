@@ -1678,79 +1678,6 @@ struct selection_statement_node
 
 struct match_expression_node;
 
-struct match_primary_expression_node
-{
-    match_expression_node *const parent = nullptr;
-
-    enum active { identifier=0, expression_list };
-    std::variant<
-        token const*,                             // could be id, arrow, colon, etc
-        std::unique_ptr<expression_list_node>     // node attributes
-    > expression;
-
-    // API
-    auto is_token() const
-        -> bool
-    {
-        return expression.index() == identifier;
-    }
-
-    auto is_id_expression() const
-        -> bool
-    {
-        if (is_token()) {
-            return std::get<identifier>(expression)->type() == lexeme::Identifier;
-        }
-        // else
-        return false;
-    }
-
-    auto is_arrow() const
-        -> bool
-    {
-        if (is_token()) {
-            return std::get<identifier>(expression)->type() == lexeme::Arrow;
-        }
-        // else
-        return false;
-    }
-
-    auto is_colon() const
-        -> bool
-    {
-        if (is_token()) {
-            return std::get<identifier>(expression)->type() == lexeme::Colon;
-        }
-        // else
-        return false;
-    }
-
-    auto get_token() const
-        -> token const*
-    {
-        if (is_token()) {
-            // assert (token);??
-            return std::get<identifier>(expression);
-        }
-        // else
-        return {};
-    }
-
-    auto is_expression_list() const
-        -> bool
-    {
-        return expression.index() == expression_list;
-    }
-
-    auto visit(auto& v, int depth)
-        -> void
-    {
-        v.start(*this, depth);
-        try_visit<expression_list>(expression, v, depth);
-        v.end(*this, depth);
-    }
-};
-
 struct match_node_node
 {
     source_position open_paren;
@@ -1785,8 +1712,9 @@ struct match_node_node
         -> void
     {
         v.start(*this, depth);
-        assert (attrs);
-        attrs->visit(v, depth + 1);
+        if (attrs) {
+            attrs->visit(v, depth + 1);
+        }
         v.end(*this, depth);
     }
 };
@@ -1834,8 +1762,9 @@ struct match_arrow_node
         -> void
     {
         v.start(*this, depth);
-        assert (attrs);
-        attrs->visit(v, depth + 1);
+        if (attrs) {
+            attrs->visit(v, depth + 1);
+        }
         v.end(*this, depth);
     }
 };
@@ -1858,14 +1787,24 @@ struct match_expression_node
         return node && !arrow && !match;
     }
 
+    auto next()
+        -> match_expression_node*
+    {
+        return match.get();
+    }
+
     auto visit(auto& v, int depth)
         -> void
     {
         v.start(*this, depth);
         assert (node);
         node->visit(v, depth + 1);
-        assert (match);
-        match->visit(v, depth + 1);
+        if (arrow) {
+            arrow->visit(v, depth + 1);
+        }
+        if (match) {
+            match->visit(v, depth + 1);
+        }
         v.end(*this, depth);
     }
 };
@@ -2133,7 +2072,7 @@ struct statement_node
 
     statement_node(compound_statement_node* compound_parent_ = nullptr);
 
-    enum active { expression=0, compound, selection, declaration, return_, iteration, using_, contract, inspect, jump };
+    enum active { expression=0, compound, selection, declaration, return_, iteration, using_, contract, inspect, jump, match };
     std::variant<
         std::unique_ptr<expression_statement_node>,
         std::unique_ptr<compound_statement_node>,
@@ -2144,7 +2083,8 @@ struct statement_node
         std::unique_ptr<using_statement_node>,
         std::unique_ptr<contract_node>,
         std::unique_ptr<inspect_expression_node>,
-        std::unique_ptr<jump_statement_node>
+        std::unique_ptr<jump_statement_node>,
+        std::unique_ptr<match_statement_node>
     > statement;
 
     bool emitted = false;               // a note field that's used during lowering to Cpp1
@@ -2163,6 +2103,7 @@ struct statement_node
     auto is_contract   () const -> bool { return statement.index() == contract;    }
     auto is_inspect    () const -> bool { return statement.index() == inspect;     }
     auto is_jump       () const -> bool { return statement.index() == jump;        }
+    auto is_match      () const -> bool { return statement.index() == match;       }
 
     template<typename Node>
     auto get_if()
@@ -2397,6 +2338,7 @@ auto statement_node::visit(auto& v, int depth)
     try_visit<contract   >(statement, v, depth);
     try_visit<inspect    >(statement, v, depth);
     try_visit<jump       >(statement, v, depth);
+    try_visit<match      >(statement, v, depth);
     v.end(*this, depth);
 }
 
@@ -5210,9 +5152,11 @@ class parser
         }
     };
 
+public:
     std::vector<token> const* tokens = {};
     std::deque<token>* generated_tokens = {};
     int pos = 0;
+private:
     std::string parse_kind = {};
 
     //  Keep track of the function bodies' locations - used to emit comments
@@ -6775,7 +6719,7 @@ private:
 
         return n;
     }
-
+public:
     //G match-node:
     //G     '(' identifier (':' '{' match-node-attrs '}')? ')'
     auto match_node()
@@ -6971,13 +6915,22 @@ private:
             return {};
         }
 
-        if (curr().type() != lexeme::RightBrace) {
-            error("a match body must be enclosed with { }", true, {}, true);
+        if (
+            curr().type() != lexeme::RightBrace
+            || !peek(1)
+            || peek(1)->type() != lexeme::Semicolon
+        ) {
+            error("a match body must be enclosed with { } and end with ;", true, {}, true);
             return {};
         }
+        n->close_brace = curr().position();
+        next(2);
+
+        std::cout << "Parsed it alright" << std::endl;
+
         return n;
     }
-
+private:
     //G return-statement:
     //G     return expression? ';'
     //G
@@ -7501,6 +7454,12 @@ private:
         if (auto s = selection_statement()) {
             n->statement = std::move(s);
             assert (n->is_selection());
+            return n;
+        }
+
+        else if (auto m = match_statement()) {
+            n->statement = std::move(m);
+            assert (n->is_match());
             return n;
         }
 
@@ -8173,6 +8132,7 @@ private:
     //G     ':' meta-functions-list? template-parameter-declaration-list? function-type statement
     //G     ':' meta-functions-list? template-parameter-declaration-list? type-id? requires-clause? '=' statement
     //G     ':' meta-functions-list? template-parameter-declaration-list? type-id
+    /// TODO: should we add here the match statement?
     //G     ':' meta-functions-list? template-parameter-declaration-list? 'final'? 'type' requires-clause? '=' statement
     //G     ':' 'namespace' '=' statement
     //G

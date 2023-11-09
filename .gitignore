@@ -26,3 +26,6 @@
 *.bin
 *.exe
 source/gen_version.bat
+.vscode/
+regression-tests/*.cpp
+a.out
