@@ -1821,4 +1821,151 @@ using cpp2::cpp2_new;
     #define CPP2_REQUIRES_(...) requires (__VA_ARGS__)
 #endif
 
+#include <map>
+#include <queue>
+#include <set>
+#include <stack>
+#include <type_traits>
+#include <vector>
+
+namespace cpp2 {
+template<typename G>
+concept Graph = requires(G g)
+{
+    { get_size(g) } -> std::convertible_to<size_t>;
+    get_adj_list(g, 0);
+    { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
+    { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
+    { get_adj_list(g, 0).size() } -> std::convertible_to<size_t>;
+    get_attrs(g, 0);
+    get_default_attrs_pred(g);
+    { get_default_attrs_pred(g)(get_attrs(g, 0)) } -> std::convertible_to<bool>;
+};
+
+enum class walk_type : std::uint8_t { bfs, dfs };
+template <Graph G, walk_type wt>
+auto search(G const& g, size_t source)
+    -> std::vector<std::optional<size_t>>
+{
+    using v_type = size_t;
+    auto next_nodes = std::conditional_t<
+        wt == walk_type::bfs,
+        std::queue<v_type>,
+        std::conditional_t<
+            wt == walk_type::dfs,
+            std::stack<v_type>,
+            // should fail if wt is something else entirely
+            void
+        >
+    >{};
+    const auto graph_size = size_t{g.get_size()};
+    auto parent = std::vector<std::optional<v_type>>(graph_size);
+    auto visited = std::vector<bool>(graph_size);
+
+    auto push = [&next_nodes](auto &&elem) {
+        next_nodes.push(elem);
+    };
+
+    auto pop = [&next_nodes]() {
+        auto pop = v_type{};
+        if constexpr (wt == walk_type::bfs) {
+            pop = next_nodes.front();
+        } else if constexpr (wt == walk_type::dfs) {
+            pop = next_nodes.top();
+        } else {
+            static_assert (
+                (wt == walk_type::bfs) ||
+                (wt == walk_type::dfs) ||
+                !"It is something else entirely"
+            );
+        }
+        next_nodes.pop();
+
+        return pop;
+    };
+
+    push(source);
+    parent[source] = source;
+    visited[source] = true;
+
+    while (!next_nodes.empty()) {
+        const auto v = pop();
+        // const auto &curr_node = g.get_node(v);
+        const auto &adj_list = get_adj_list(v); // std::get<0>(curr_node);
+
+        for (const auto adj : adj_list) {
+            if (!visited[adj]) {
+                parent[adj] = v;
+                visited[adj] = true;
+                push(adj);
+            }
+        }
+    }
+
+    return parent;
+}
+
+template <typename v_type>
+    requires (std::is_integral_v<v_type>)
+auto calc_distance(
+    std::vector<std::optional<v_type>> const& parent
+)
+    -> std::vector<std::optional<size_t>>
+{
+    // using v_type = typename graph<at>::v_type;
+    auto distance = std::vector<std::optional<size_t>>(parent.size());
+
+    for (v_type i = 0; i < parent.size(); ++i) {
+        if (!parent[i]) {
+            continue;
+        } else if (distance[i]) {
+            continue;
+        } else if (i == *parent[i]) {
+            distance[i] = 0;
+            continue;
+        }
+
+        auto i_parent = *parent[i];
+        auto dist = distance[i_parent];
+        auto lineage = std::stack<v_type>{};
+        while (!dist && i_parent != *parent[i_parent]) {
+            lineage.push(i_parent);
+            i_parent = *parent[i_parent];
+            dist = distance[i_parent];
+        }
+        if (i_parent == *parent[i_parent]) {
+            dist = distance[i_parent] = 0;
+        }
+        auto curr_dist = *dist;
+        while (!lineage.empty()) {
+            distance[lineage.top()] = ++curr_dist;
+            lineage.pop();
+        }
+        
+        distance[i] = *distance[*parent[i]] + 1;
+    }
+
+    return distance;
+}
+
+template <Graph G>
+auto create_distance_matrix(G const& g)
+    -> std::vector<std::vector<std::optional<size_t>>>
+{
+    using v_type = size_t;
+    const auto graph_size = g.get_size();
+
+    auto dist_matrix = std::vector<std::vector<std::optional<size_t>>>{};
+
+    for (v_type i = 0; i < graph_size; ++i) {
+        auto parent = search<walk_type::bfs>(g, i);
+
+        dist_matrix.push_back(calc_distance(parent));
+    }
+
+    return dist_matrix;
+}
+
+}
+
 #endif
