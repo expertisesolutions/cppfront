@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <concepts>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -39,9 +40,13 @@ namespace std {
 auto to_string(const cpp2::expression_list_node &eln)
     -> std::string
 {
-    /// TODO: fill out stuff here
-    /// maybe use a visitor?
-    return {};
+    auto oss = std::ostringstream{};
+    auto sep = "";
+    for (auto const &expr : eln.expressions) {
+        oss << sep << expr.expr->to_string();
+        sep = ", ";
+    }
+    return oss.str();
 }
 
 }
@@ -261,7 +266,7 @@ public:
                 sep = ", ";
             }
             /// TODO: forward node attributes
-            oss << "}, {" << std::to_string(*n.attrs) << "}});\n";
+            oss << "}, {" << (n.attrs ? std::to_string(*n.attrs) : ""s) << "}});\n";
         }
         const auto fill_out_pattern_nodes = oss.str();
 
@@ -440,7 +445,7 @@ public:
             ""sv;
 
         constexpr auto end_of_lambda =
-            "};\n"
+            "}\n"
             ""sv;
 
         oss.str("");
@@ -632,7 +637,7 @@ struct graph {
     }
 
     auto get_node(v_type vertex) const
-        -> const node_type&
+        -> node_type const&
     {
         assert (vertex < nodes.size());
 
@@ -648,7 +653,7 @@ struct graph {
     }
 
     auto get_adj_list(v_type vertex) const
-        -> const adjacency_list_type&
+        -> adjacency_list_type const&
     {
         assert (vertex < nodes.size());
 
@@ -661,6 +666,22 @@ struct graph {
         assert (vertex < nodes.size());
 
         return std::get<0>(nodes[vertex]);
+    }
+
+    auto get_attrs(v_type vertex) const
+        -> attrs_type const&
+    {
+        assert (vertex < nodes.size());
+
+        return std::get<1>(nodes[vertex]);
+    }
+
+    auto get_attrs(v_type vertex)
+        -> attrs_type &
+    {
+        assert (vertex < nodes.size());
+
+        return std::get<1>(nodes[vertex]);
     }
 
     auto get_size() const
@@ -758,7 +779,7 @@ auto get_edge_value(
 }
 
 template <typename at, typename pt>
-auto get_node_adj_list(
+auto get_adj_list(
     typename pattern<at, pt>::node_type const &node
 )
     -> typename pattern<at, pt>::adjacency_list_type const&
@@ -767,7 +788,7 @@ auto get_node_adj_list(
 }
 
 template <typename at>
-auto get_node_adj_list(
+auto get_adj_list(
     typename graph<at>::node_type const &node
 )
     -> typename graph<at>::adjacency_list_type const&
@@ -781,7 +802,7 @@ auto get_out_degree(
 )
     -> size_t
 {
-    return std::size(get_node_adj_list<at, pt>(node));
+    return std::size(get_adj_list<at, pt>(node));
 }
 
 template <typename at>
@@ -790,14 +811,14 @@ auto get_out_degree(
 )
     -> size_t
 {
-    return std::size(get_node_adj_list<at>(node));
+    return std::size(get_adj_list<at>(node));
 }
 
 template <typename at>
-auto get_node_attrs(
+auto get_attrs(
     typename graph<at>::node_type const &node
 )
-    -> const at&
+    -> at const&
 {
     return std::get<1>(node);
 }
@@ -810,7 +831,7 @@ auto match(
     -> bool
 {
     return get_node_predicate<at, pt>(pat_node)(
-        get_node_attrs<at>(node)
+        get_attrs<at>(node)
     );
 }
 
@@ -857,7 +878,6 @@ auto search(const graph<at> &g, typename graph<at>::v_type source)
     };
 
     push(source);
-    /// TODO: should source be its own parent?
     parent[source] = source;
     visited[source] = true;
 
@@ -1033,6 +1053,171 @@ std::ostream& operator<<(std::ostream &os, const std::map<key, value> &m)
     }
     return os << "}\n";
 }
+
+}
+
+// template <typename at>
+auto get_size(cpp2::bounded_simulation::graph<> const& g)
+    -> size_t
+{
+    return g.get_size();
+}
+
+// template <typename at>
+auto get_adj_list(cpp2::bounded_simulation::graph<> const& g, size_t i)
+    -> typename cpp2::bounded_simulation::graph<>::adjacency_list_type const&
+{
+    assert (i < g.get_size());
+    return g.get_adj_list(i);
+}
+
+// template <typename at>
+auto get_attrs(cpp2::bounded_simulation::graph<> const& g, size_t i)
+    -> cpp2::bounded_simulation::graph<>::attrs_type const&// const at&
+{
+    assert (i < g.get_size());
+    return g.get_attrs(i);
+}
+
+namespace cpp2 {
+template<typename G>
+concept Graph = requires(G g)
+{
+    { get_size(g) } -> std::convertible_to<size_t>;
+    get_adj_list(g, 0);
+    { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
+    { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
+    { get_adj_list(g, 0).size() } -> std::convertible_to<size_t>;
+    get_attrs(g, 0);
+};
+
+enum class walk_type : std::uint8_t { bfs, dfs };
+template <Graph G, walk_type wt>
+auto search(G const& g, size_t source)
+    -> std::vector<std::optional<size_t>>
+{
+    using v_type = size_t;
+    auto next_nodes = std::conditional_t<
+        wt == walk_type::bfs,
+        std::queue<v_type>,
+        std::conditional_t<
+            wt == walk_type::dfs,
+            std::stack<v_type>,
+            // should fail if wt is something else entirely
+            void
+        >
+    >{};
+    const auto graph_size = size_t{g.get_size()};
+    auto parent = std::vector<std::optional<v_type>>(graph_size);
+    auto visited = std::vector<bool>(graph_size);
+
+    auto push = [&next_nodes](auto &&elem) {
+        next_nodes.push(elem);
+    };
+
+    auto pop = [&next_nodes]() {
+        auto pop = v_type{};
+        if constexpr (wt == walk_type::bfs) {
+            pop = next_nodes.front();
+        } else if constexpr (wt == walk_type::dfs) {
+            pop = next_nodes.top();
+        } else {
+            static_assert (
+                (wt == walk_type::bfs) ||
+                (wt == walk_type::dfs) ||
+                !"It is something else entirely"
+            );
+        }
+        next_nodes.pop();
+
+        return pop;
+    };
+
+    push(source);
+    parent[source] = source;
+    visited[source] = true;
+
+    while (!next_nodes.empty()) {
+        const auto v = pop();
+        // const auto &curr_node = g.get_node(v);
+        const auto &adj_list = get_adj_list(v); // std::get<0>(curr_node);
+
+        for (const auto adj : adj_list) {
+            if (!visited[adj]) {
+                parent[adj] = v;
+                visited[adj] = true;
+                push(adj);
+            }
+        }
+    }
+
+    return parent;
+}
+
+template <typename v_type>
+    requires (std::is_integral_v<v_type>)
+auto calc_distance(
+    std::vector<std::optional<v_type>> const& parent
+)
+    -> std::vector<std::optional<size_t>>
+{
+    // using v_type = typename graph<at>::v_type;
+    auto distance = std::vector<std::optional<size_t>>(parent.size());
+
+    for (v_type i = 0; i < parent.size(); ++i) {
+        if (!parent[i]) {
+            continue;
+        } else if (distance[i]) {
+            continue;
+        } else if (i == *parent[i]) {
+            distance[i] = 0;
+            continue;
+        }
+
+        auto i_parent = *parent[i];
+        auto dist = distance[i_parent];
+        auto lineage = std::stack<v_type>{};
+        while (!dist && i_parent != *parent[i_parent]) {
+            lineage.push(i_parent);
+            i_parent = *parent[i_parent];
+            dist = distance[i_parent];
+        }
+        if (i_parent == *parent[i_parent]) {
+            dist = distance[i_parent] = 0;
+        }
+        auto curr_dist = *dist;
+        while (!lineage.empty()) {
+            distance[lineage.top()] = ++curr_dist;
+            lineage.pop();
+        }
+        
+        distance[i] = *distance[*parent[i]] + 1;
+    }
+
+    return distance;
+}
+
+template <Graph G>
+auto create_distance_matrix(G const& g)
+    -> std::vector<std::vector<std::optional<size_t>>>
+{
+    using v_type = size_t;
+    const auto graph_size = g.get_size();
+
+    auto dist_matrix = std::vector<std::vector<std::optional<size_t>>>{};
+
+    for (v_type i = 0; i < graph_size; ++i) {
+        auto parent = search<walk_type::bfs>(g, i);
+
+        dist_matrix.push_back(calc_distance(parent));
+    }
+
+    return dist_matrix;
+}
+
+}
+
+namespace cpp2::bounded_simulation {
 
 template <typename at, typename pt>
 auto bounded_simulation_match(
@@ -1280,7 +1465,8 @@ auto bounded_simulation_match(
     return S;
 }
 
-
 }
+
+static_assert(cpp2::Graph<cpp2::bounded_simulation::graph<>>);
 
 #endif
