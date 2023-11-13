@@ -265,7 +265,6 @@ public:
                 oss << sep << std::to_string(adj);
                 sep = ", ";
             }
-            /// TODO: forward node attributes
             oss << "}, {" << (n.attrs ? std::to_string(*n.attrs) : ""s) << "}});\n";
         }
         const auto fill_out_pattern_nodes = oss.str();
@@ -1265,7 +1264,6 @@ auto bounded_simulation_match(
         for (const auto &[edge, value] : pat_edges) {
             // const auto [edge, value] = edge_value_pair;
             if (std::get<1>(edge) != ip) {
-                /// TODO: check if this is correct
                 continue;
             }
             const auto ip_ = std::get<0>(edge);
