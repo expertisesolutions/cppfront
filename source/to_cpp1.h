@@ -18,6 +18,7 @@
 #ifndef CPP2_TO_CPP1_H
 #define CPP2_TO_CPP1_H
 
+#include "match.h"
 #include "sema.h"
 #include <iostream>
 #include <cstdio>
@@ -3781,6 +3782,22 @@ public:
 
     //-----------------------------------------------------------------------
     //
+    auto emit(match_statement_node const& n)
+        -> void
+    {
+        if (!sema.check(n)) {
+            return;
+        }
+
+        auto mg = match_generator{errors, &n};
+        printer.print_cpp2("[&](auto &&g) { return true; }", n.position());
+        // printer.print_cpp2(mg.generate(), n.position());
+        // std::cout << mg.generate() << std::endl;
+    }
+
+
+    //-----------------------------------------------------------------------
+    //
     auto emit(
         statement_node const&           n,
         bool                            can_have_semicolon  = true,
@@ -3849,6 +3866,7 @@ public:
         try_emit<statement_node::contract   >(n.statement);
         try_emit<statement_node::inspect    >(n.statement, false);
         try_emit<statement_node::jump       >(n.statement);
+        try_emit<statement_node::match      >(n.statement);
 
         printer.preempt_position_pop();
 
