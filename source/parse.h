@@ -6771,19 +6771,20 @@ public:
         -> std::unique_ptr<match_edge_attrs_node>
     {
         auto n = std::make_unique<match_edge_attrs_node>(curr().position());
-        next();
         if (
             curr().type() != lexeme::DecimalLiteral
             && curr().type() != lexeme::HexadecimalLiteral
             && curr().type() != lexeme::BinaryLiteral
+            /// TODO: leave space for a wildcard too
         ) {
-            error("Edge attribute must be a literal", true, {}, true);
+            error("edge attribute must be a literal", true, {}, true);
             return {};
         }
         n->lhs_attrs = &curr();
         next();
         if (curr().type() == lexeme::RightBrace) {
             n->close_brace = curr().position();
+            next();
             return n;
         }
         /// TODO: complete function
@@ -6791,9 +6792,9 @@ public:
     }
 
     //G match-arrow?
-    //G     ->
-    //G     --
-    //G     -{literal?}->
+    //G     '->'
+    //G     '--'
+    //G     '-' match-edge-attrs '->'
     auto match_arrow()
         -> std::unique_ptr<match_arrow_node>
     {
@@ -6817,8 +6818,10 @@ public:
         next();
 
         if (curr().type() != lexeme::LeftBrace) {
+            error("a match edge attribute must be enclosed with { }");
             return {};
         }
+        next();
         if (auto e = match_edge_attrs()) {
             n->attrs = std::move(e);
         }
