@@ -126,7 +126,7 @@ private:
         match_edge_attrs_node const* const mean = nullptr
     ) {
         if (!mnn1 || !mnn2) {
-            return {};
+            return;
         }
         const auto label1 = mnn1->get_label()->as_string_view();
         const auto label2 = mnn2->get_label()->as_string_view();
