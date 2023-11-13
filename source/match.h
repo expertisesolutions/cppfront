@@ -120,12 +120,11 @@ private:
         }
     }
 
-    auto insert_edge(
-        match_node_node *const mnn1,
-        match_node_node *const mnn2
-    )
-        -> std::optional<std::tuple<size_t, size_t>>
-    {
+    void insert_edge(
+        match_node_node const* const mnn1,
+        match_node_node const* const mnn2,
+        match_edge_attrs_node const* const mean = nullptr
+    ) {
         if (!mnn1 || !mnn2) {
             return {};
         }
@@ -138,49 +137,52 @@ private:
 
         if (it1 != end && it2 != end) {
             nodes[it1->second].adj_nodes.push_back(it2->second);
-            /// TODO: should we add the edge attributes here?
-            edges_attrs_map.emplace(
-                std::tuple{it1->second, it2->second},
-                std::optional<size_t>{1}
-            );
+            if (!mean || !mean->lhs_attrs) {
+                edges_attrs_map.emplace(
+                    std::tuple{it1->second, it2->second},
+                    std::optional<size_t>{1}
+                );
+            } else {
+                auto attr_str = std::string{mean->lhs_attrs->as_string_view()};
+                auto base = 0;
+                if (attr_str.starts_with("0b")) {
+                    attr_str.erase(0, 2);
+                    base = 2;
+                }
+                auto attr = std::stoull(attr_str, nullptr, base);
+                if (attr != 0) {
+                    edges_attrs_map.emplace(
+                        std::tuple{it1->second, it2->second}, attr
+                    );
+                } else {
+                    edges_attrs_map.emplace(
+                        std::tuple{it1->second, it2->second}, std::nullopt
+                    );
+                }
+            }
         } else {
             /// TODO: should we find out which one(s) is(are) missing
             /// and insert the node(s)?
-        }
-
-        return {{it1->second, it2->second}};
-    }
-
-    void insert_edge(match_expression_node const* const men) {
-        assert (men);
-        assert (men->node);
-        assert (men->arrow);
-        assert (men->match);
-        assert (men->match->node);
-
-        const auto idxs_opt = insert_edge(men->node.get(), men->match->node.get());
-        if (idxs_opt) {
-            const auto it = edges_attrs_map.find(*idxs_opt);
-            if (it != edges_attrs_map.end()) {
-                /// TODO: there already exists an edge with attributes,
-                /// should we report or update that?
-            } else {
-                /// TODO: parse attributes from men->arrow->attrs
-                edges_attrs_map.emplace(*idxs_opt, std::nullopt);
-            }
         }
     }
 
     void parse_match_expression(match_expression_node const* men) {
         assert (men);
         assert (men->node);
-        match_node_node *prev_node = nullptr;
+        match_node_node const* prev_node = nullptr;
+        match_expression_node const* prev_expr = nullptr;
 
         do {
             auto *node = men->node.get();
             insert_node(node);
-            insert_edge(prev_node, node);
+            insert_edge(
+                prev_node,
+                node,
+                prev_expr && prev_expr->arrow ?
+                    prev_expr->arrow->attrs.get() : nullptr
+            );
             prev_node = node;
+            prev_expr = men;
             men = men->next();
         } while (men != nullptr);
     }
@@ -200,6 +202,18 @@ private:
             std::cout << "sons\n";
             for (const auto s : n.adj_nodes) {
                 std::cout << "\t" << s << ", " << *nodes[s].label << std::endl;
+                if (
+                    auto it = edges_attrs_map.find({i - 1, s});
+                    it != edges_attrs_map.end()
+                ) {
+                    if (it->second) {
+                        std::cout << "\t" << *it->second << std::endl;
+                    } else {
+                        std::cout << "\t" << "[empty]" << std::endl;
+                    }
+                } else {
+                    std::cout << "Could not find edge for given nodes" << std::endl;
+                }
             }
         }
     }
