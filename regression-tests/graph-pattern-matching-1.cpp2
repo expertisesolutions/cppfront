@@ -1,3 +1,45 @@
+
+struct my_graph {
+    struct node {
+        std::vector<size_t> adj_list;
+        std::string attrs;
+    };
+
+    struct pred {
+        std::string internal;
+
+        pred(char const *str) : internal{str} { }
+        pred(std::string const& str) : internal{str} { }
+        pred(std::string&& str) : internal{std::move(str)} { }
+
+        bool operator()(std::string const& s) const {
+            return internal < s;
+        }
+    };
+
+    std::vector<node> nodes;
+};
+
+get_size: (in g: my_graph) -> size_t = {
+    return g.nodes.size();
+}
+
+get_adj_list: (in g: my_graph, in i: size_t) -> std::vector<size_t> = {
+    assert<Bounds>(i < get_size(g));
+
+    return g.nodes[i].adj_list;
+}
+
+get_attrs: (in g: my_graph, in i: size_t) -> std::string = {
+    assert<Bounds>(i < get_size(g));
+
+    return g.nodes[i].attrs;
+}
+
+get_default_attrs_pred: (_: my_graph) -> my_graph::pred = {
+    return ("cppfront is awesome");
+}
+
 main: () -> int = {
     m: _ = match {
         (c:{0,'a',0x123})-{2}-(d:{123})->(e);
@@ -6,4 +48,7 @@ main: () -> int = {
         (b)->(d);
         (e)-{4}->(a);
     };
+
+    g: my_graph = ();
+    rel := m(g);
 }

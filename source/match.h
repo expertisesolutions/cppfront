@@ -227,7 +227,7 @@ public:
         
         auto oss = std::ostringstream{};
         constexpr auto header_and_captures =
-            "[&](auto &&g) {\n"
+            "[&](auto &&g) requires cpp2::Graph<decltype(g)> {\n"
             ""sv;
         constexpr auto type_definitions =
             "using graph_attrs = decltype(get_attrs(g, 0));\n"

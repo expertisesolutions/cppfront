@@ -1960,6 +1960,7 @@ concept Graph = requires(G g)
     { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
     { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
     { get_adj_list(g, 0).size() } -> std::convertible_to<size_t>;
+    ++get_adj_list(g, 0).begin();
     get_attrs(g, 0);
     get_default_attrs_pred(g);
     { get_default_attrs_pred(g)(get_attrs(g, 0)) } -> std::convertible_to<bool>;
