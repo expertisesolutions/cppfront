@@ -1982,7 +1982,7 @@ auto search(G const& g, size_t source)
             void
         >
     >{};
-    const auto graph_size = size_t{g.get_size()};
+    const auto graph_size = size_t{get_size(g)};
     auto parent = std::vector<std::optional<v_type>>(graph_size);
     auto visited = std::vector<bool>(graph_size);
 
@@ -2015,7 +2015,7 @@ auto search(G const& g, size_t source)
     while (!next_nodes.empty()) {
         const auto v = pop();
         // const auto &curr_node = g.get_node(v);
-        const auto &adj_list = get_adj_list(v); // std::get<0>(curr_node);
+        const auto &adj_list = get_adj_list(g, v); // std::get<0>(curr_node);
 
         for (const auto adj : adj_list) {
             if (!visited[adj]) {
@@ -2077,12 +2077,12 @@ auto create_distance_matrix(G const& g)
     -> std::vector<std::vector<std::optional<size_t>>>
 {
     using v_type = size_t;
-    const auto graph_size = g.get_size();
+    const auto graph_size = size_t{get_size(g)};
 
     auto dist_matrix = std::vector<std::vector<std::optional<size_t>>>{};
 
     for (v_type i = 0; i < graph_size; ++i) {
-        auto parent = search<walk_type::bfs>(g, i);
+        auto parent = search<G, walk_type::bfs>(g, i);
 
         dist_matrix.push_back(calc_distance(parent));
     }
