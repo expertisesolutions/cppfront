@@ -24,13 +24,13 @@ get_size: (in g: my_graph) -> size_t = {
     return g.nodes.size();
 }
 
-get_adj_list: (in g: my_graph, in i: size_t) -> std::vector<size_t> = {
+get_adj_list: (inout g: my_graph, in i: size_t) -> forward const std::vector<size_t> = {
     assert<Bounds>(i < get_size(g));
 
     return g.nodes[i].adj_list;
 }
 
-get_attrs: (in g: my_graph, in i: size_t) -> std::string = {
+get_attrs: (inout g: my_graph, in i: size_t) -> forward const std::string = {
     assert<Bounds>(i < get_size(g));
 
     return g.nodes[i].attrs;
