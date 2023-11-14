@@ -239,7 +239,7 @@ public:
             "auto match = [](graph_attrs_pred const& pred, auto&& attrs){ return pred(attrs); };\n"
             ""sv;
         constexpr auto distance_matrix =
-            "const auto X = create_distance_matrix(g);\n"
+            "const auto X = ::cpp2::create_distance_matrix(g);\n"
             ""sv;
         constexpr auto define_anc_desc =
             "auto anc = std::map<std::tuple<size_t, size_t, size_t>, std::set<size_t>>{};\n"
@@ -336,7 +336,7 @@ public:
             "        if (match(std::get<1>(u), v_attrs)) {\n"
             "            if (\n"
             "                std::get<0>(u).size() == 0 ||\n"
-            "                std::size(get_adj_list(g, i)) != 0\n"
+            "                get_adj_list(g, i).size() != 0\n"
             "            ) {\n"
             "                mat[ip].insert(i);\n"
             "            }\n"
@@ -344,7 +344,7 @@ public:
             "    }\n"
             "    for (size_t i_ = 0; i_ < graph_size; ++i_) {\n"
             "        const auto &v_prime_attrs = get_attrs(g, i_);\n"
-            "        if (std::size(get_adj_list(g, i_)) != 0) {\n"
+            "        if (get_adj_list(g, i_).size() != 0) {\n"
             "            const auto it = std::find_if(\n"
             "                pattern_edges_map.begin(),\n"
             "                pattern_edges_map.end(),\n"
