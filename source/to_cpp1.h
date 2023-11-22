@@ -3790,12 +3790,11 @@ public:
         }
 
         auto mg = match_generator{errors, &n};
-        printer.print_cpp2(
-            "[&](auto &&g) requires cpp2::Graph<decltype(g)> { return true; }",
-            n.position()
-        );
-        // printer.print_cpp2(mg.generate(), n.position());
-        std::cout << mg.generate() << std::endl;
+        // printer.print_cpp2(
+        //     "[&](auto &&g) requires cpp2::Graph<decltype(g)> { return true; }",
+        //     n.position()
+        // );
+        printer.print_cpp1(mg.generate(), n.position().lineno);
     }
 
 
