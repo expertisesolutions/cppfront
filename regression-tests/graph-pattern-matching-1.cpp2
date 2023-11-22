@@ -2,24 +2,36 @@
 struct my_graph {
     struct node {
         std::vector<size_t> adj_list;
-        std::string attrs;
+        std::set<std::string> attrs;
     };
 
     struct pred {
         std::string internal;
 
-        template<typename ...args>
-        pred(args...) : internal{""} { }
-        pred(char const *str) : internal{str} { }
-        pred(std::string const& str) : internal{str} { }
-        pred(std::string&& str) : internal{std::move(str)} { }
+        template<typename ...Args>
+        pred(Args&&... args) : internal{args...} { }
 
-        bool operator()(std::string const& s) const {
-            return internal < s;
+        bool operator()(std::set<std::string> const& s) const {
+            return s.contains(internal);
         }
     };
 
     std::vector<node> nodes;
+
+    void add_node(std::set<std::string>&& s) {
+        nodes.push_back({{}, std::move(s)});
+    }
+
+    void add_node(std::set<std::string> const& s) {
+        nodes.push_back({{}, s});
+    }
+
+    void add_edge(size_t source, size_t sink) {
+        // assert (source < nodes.size());
+        // assert (sink < nodes.size());
+
+        nodes[source].adj_list.push_back(sink);
+    }
 };
 
 get_size: (in g: my_graph) -> size_t = {
@@ -32,7 +44,7 @@ get_adj_list: (forward g: my_graph, in i: size_t) -> forward const std::vector<s
     return g.nodes[i].adj_list;
 }
 
-get_attrs: (forward g: my_graph, in i: size_t) -> forward const std::string = {
+get_attrs: (forward g: my_graph, in i: size_t) -> forward const std::set<std::string> = {
     assert<Bounds>(i < get_size(g));
 
     return g.nodes[i].attrs;
@@ -44,13 +56,33 @@ get_default_attrs_pred: (_: my_graph) -> my_graph::pred = {
 
 main: () -> int = {
     m: _ = match {
-        (c:{0,'a',0x123})-{2}-(d:{123})->(e);
-        (a:{1,true,"damn"})->(b);
-        (a)-{3}->(c);
-        (b)->(d);
-        (e)-{4}->(a);
+        (_0:{"A"})-{2}->(_1:{"SE"})-{1}->(_3:{"DM,golf"})-{_}->(_0);
+        (_0)-{2}->(_2:{"HR"})-{2}->(_3);
     };
 
     g: my_graph = ();
+
+    set: std::set<std::string> = ("A");
+    g.add_node(set);
+    set = ("HR");
+    g.add_node(set);
+    set = ("SE");
+    g.add_node(set);
+    set = ("HR", "SE");
+    g.add_node(set);
+    set = ("DM,golf");
+    g.add_node(set);
+    set = ("DM,golf");
+    g.add_node(set);
+
+    g.add_edge(0, 1);
+    g.add_edge(1, 2);
+    g.add_edge(1, 3);
+    g.add_edge(2, 3);
+    g.add_edge(2, 4);
+    g.add_edge(3, 5);
+    g.add_edge(4, 2);
+    g.add_edge(5, 0);
+
     rel := m(g);
 }

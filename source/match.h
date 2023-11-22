@@ -63,8 +63,8 @@ size_t find_closing_paren(std::string_view);
 struct match_generator {
     struct node {
         /// TODO: should label be optional? Maybe '_' for anything
-        std::optional<std::string> label;
-        expression_list_node *attrs;
+        std::optional<std::string> label = {};
+        expression_list_node *attrs = nullptr;
         std::vector<size_t> adj_nodes;
 
         node() = default;
@@ -142,6 +142,12 @@ private:
                     std::tuple{it1->second, it2->second},
                     std::optional<size_t>{1}
                 );
+            } else if (mean->is_wildcard()) {
+                // unbounded case
+                edges_attrs_map.emplace(
+                    std::tuple{it1->second, it2->second},
+                    std::nullopt
+                );
             } else {
                 auto attr_str = std::string{mean->lhs_attrs->as_string_view()};
                 auto base = 0;
@@ -161,8 +167,7 @@ private:
                 }
             }
         } else {
-            /// TODO: should we find out which one(s) is(are) missing
-            /// and insert the node(s)?
+            assert (!"The nodes were not inserted previously");
         }
     }
 
@@ -181,6 +186,14 @@ private:
                 prev_expr && prev_expr->arrow ?
                     prev_expr->arrow->attrs.get() : nullptr
             );
+            if (
+                prev_expr
+                && prev_expr->arrow
+                && prev_expr->arrow->direction() == match_arrow_node::undirected
+            ) {
+                // if it is undirected, insert the other way around too
+                insert_edge(node, prev_node, prev_expr->arrow->attrs.get());
+            }
             prev_node = node;
             prev_expr = men;
             men = men->next();
@@ -609,9 +622,12 @@ struct pattern {
             return false;
         }
 
-        /// TODO: check whether it already exists and insert sorted
-        /// rather than pushing back
-        std::get<1>(nodes[source]).push_back(sink);
+        // std::get<1>(nodes[source]).push_back(sink);
+        auto &adj_list = std::get<1>(nodes[source]);
+        const auto it = std::lower_bound(adj_list.begin(), adj_list.end(), sink);
+        if (it == adj_list.end() || *it < sink) {
+            adj_list.insert(it, sink);
+        }
         edges_map.insert({edge, value});
 
         return true;
@@ -724,9 +740,12 @@ struct graph {
             return false;
         }
 
-        /// TODO: check whether it already exists and insert sorted
-        /// rather than pushing back
-        std::get<0>(nodes[source]).push_back(sink);
+        // std::get<0>(nodes[source]).push_back(sink);
+        auto &adj_list = std::get<0>(nodes[source]);
+        const auto it = std::lower_bound(adj_list.begin(), adj_list.end(), sink);
+        if (it == adj_list.end() || *it < sink) {
+            adj_list.insert(it, sink);
+        }
 
         return true;
     }

@@ -1685,7 +1685,6 @@ struct match_node_node
     token const* label = nullptr;
     // source_position open_brace;
     // source_position close_brace;
-    /// TODO: I don't think it should be an expression_list, check that
     std::unique_ptr<expression_list_node> attrs = {};
 
     match_node_node(
@@ -1727,7 +1726,7 @@ struct match_edge_attrs_node
     source_position open_brace;
     source_position close_brace;
     token const* lhs_attrs = nullptr;
-    token const* rhs_attrs = nullptr;
+    // token const* rhs_attrs = nullptr;
 
     match_edge_attrs_node(
         source_position o = {},
@@ -1735,6 +1734,12 @@ struct match_edge_attrs_node
     )
         : open_brace(o), close_brace(c)
     { }
+
+    auto is_wildcard() const
+        -> bool
+    {
+        return lhs_attrs && lhs_attrs->as_string_view() == "_";
+    }
 
     auto visit(auto&v, int depth)
         -> void
@@ -1748,6 +1753,7 @@ struct match_edge_attrs_node
 struct match_arrow_node
 {
     // (lhs, rhs) = ("->", null) or ("-", "->") or ("--", null) or ("-", "-")
+    // additional possibilities: ("<-", null) or ("<-", "-")
     token const* lhs = nullptr;
     token const* rhs = nullptr;
     std::unique_ptr<match_edge_attrs_node> attrs = {};
@@ -1756,6 +1762,35 @@ struct match_arrow_node
         -> bool
     {
         return static_cast<bool>(attrs);
+    }
+
+    enum dir { undirected=0, right, /*left,*/ invalid };
+    auto direction() const
+        -> dir
+    {
+        if (
+            (
+                lhs && lhs->type() == lexeme::MinusMinus
+                && !rhs
+            ) || (
+                lhs && lhs->type() == lexeme::Minus
+                && rhs && rhs->type() == lexeme::Minus
+            )
+        ) {
+            return undirected;
+        } else if (
+            (
+                lhs && lhs->type() == lexeme::Arrow
+                && !rhs
+            ) || (
+                lhs && lhs->type() == lexeme::Minus
+                && rhs && rhs->type() == lexeme::Arrow
+            )
+        ) {
+            return right;
+        }
+        // else
+        return invalid;
     }
 
     auto visit(auto& v, int depth)
@@ -6775,9 +6810,9 @@ public:
             curr().type() != lexeme::DecimalLiteral
             && curr().type() != lexeme::HexadecimalLiteral
             && curr().type() != lexeme::BinaryLiteral
-            /// TODO: leave space for a wildcard too
+            && curr().as_string_view() != "_"
         ) {
-            error("edge attribute must be a literal", true, {}, true);
+            error("edge attribute must be a literal or '_'", true, {}, true);
             return {};
         }
         n->lhs_attrs = &curr();
@@ -8135,7 +8170,6 @@ private:
     //G     ':' meta-functions-list? template-parameter-declaration-list? function-type statement
     //G     ':' meta-functions-list? template-parameter-declaration-list? type-id? requires-clause? '=' statement
     //G     ':' meta-functions-list? template-parameter-declaration-list? type-id
-    /// TODO: should we add here the match statement?
     //G     ':' meta-functions-list? template-parameter-declaration-list? 'final'? 'type' requires-clause? '=' statement
     //G     ':' 'namespace' '=' statement
     //G
