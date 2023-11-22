@@ -1807,11 +1807,12 @@ public:
     }
 
     auto start(match_statement_node const& n, int) -> void {
-        std::cout << "Visited a match statement node" << std::endl;
+        /// TODO: analyse repeated node and arrow attributes
+        /// and other semantics errors
     }
 
     auto end(match_statement_node const&n, int) -> void {
-        std::cout << "Visit went alright, thanks" << std::endl;
+        /// TODO: same
     }
 
     auto start(auto const&, int) -> void

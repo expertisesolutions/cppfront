@@ -6964,8 +6964,6 @@ public:
         n->close_brace = curr().position();
         next(2);
 
-        std::cout << "Parsed it alright" << std::endl;
-
         return n;
     }
 private:

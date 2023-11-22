@@ -23,18 +23,6 @@
 #include <variant>
 #include <vector>
 
-/* Generation rules:
-MATCH -> MATCH '->' NODE
-NODE -> '(' NODE_DESCRIPTION ')'
-NODE_DESCRIPTION -> NODE_LABEL ':' NODE_ATTRIBUTE | ''
-NODE_LABEL -> rex [\w_][\w\d_]*
-NODE_ATTRIBUTE -> '{' ATTRIBUTE_LIST '}' | '_'
-ATTRIBUTE_LIST -> ATTRIBUTE_LIST ',' VALUE | VALUE
-VALUE -> LITERAL | CAPTURE
-LITERAL -> rex [0-9]*\.?[0-9]+ | rex "[^"]*" | ...
-CAPTURE -> '$' (todo...)
-*/
-
 namespace std {
 
 auto to_string(const cpp2::expression_list_node &eln)
@@ -204,30 +192,8 @@ private:
         assert (msn);
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;
-        auto i = 0;
         for (const auto &expr : exprs) {
-            std::cout << "Parsing match expression " << ++i << std::endl;
             parse_match_expression(expr.get());
-        }
-        i = 0;
-        for (const auto &n : nodes) {
-            std::cout << "node " << i++ << ", " << *n.label << std::endl;
-            std::cout << "sons\n";
-            for (const auto s : n.adj_nodes) {
-                std::cout << "\t" << s << ", " << *nodes[s].label << std::endl;
-                if (
-                    auto it = edges_attrs_map.find({i - 1, s});
-                    it != edges_attrs_map.end()
-                ) {
-                    if (it->second) {
-                        std::cout << "\t" << *it->second << std::endl;
-                    } else {
-                        std::cout << "\t" << "[empty]" << std::endl;
-                    }
-                } else {
-                    std::cout << "Could not find edge for given nodes" << std::endl;
-                }
-            }
         }
     }
 
