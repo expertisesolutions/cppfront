@@ -206,13 +206,14 @@ public:
         
         auto oss = std::ostringstream{};
         constexpr auto header_and_captures =
-            "[&](auto &&g) requires cpp2::Graph<decltype(g)> {"
+            "[&](auto &&g, std::type_identity<auto> t) -> std::set<std::tuple<size_t, size_t>>"
+            " requires cpp2::Graph<decltype(g)> {"
             ""sv;
         constexpr auto type_definitions =
             "using graph_attrs = decltype(get_attrs(g, 0));"
             "using graph_adj_list = decltype(get_adj_list(g, 0));"
-            "using graph_attrs_pred = decltype(get_default_attrs_pred(g));"
-            // "// template <...args> using relation = std::set<std::tuple<args...>>;"
+            // "using graph_attrs_pred = decltype(get_default_attrs_pred(g));"
+            "using graph_attrs_pred = typename decltype(t)::type;"
             ""sv;
         constexpr auto match_lambda_definition =
             "auto match = [](graph_attrs_pred const& pred, auto&& attrs){ return pred(attrs); };"

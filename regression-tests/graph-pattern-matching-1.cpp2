@@ -84,5 +84,5 @@ main: () -> int = {
     g.add_edge(4, 2);
     g.add_edge(5, 0);
 
-    rel := m(g);
+    rel := m(g, std::type_identity<my_graph::pred>());
 }
