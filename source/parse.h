@@ -1685,7 +1685,8 @@ struct match_node_node
     token const* label = nullptr;
     // source_position open_brace;
     // source_position close_brace;
-    std::unique_ptr<expression_list_node> attrs = {};
+    std::unique_ptr<logical_or_expression_node> pred = {};
+    std::unique_ptr<declaration_node> decl = {};
 
     match_node_node(
         source_position o = {},
@@ -1694,10 +1695,18 @@ struct match_node_node
         : open_paren{o}, close_paren{c}
     { }
 
-    auto has_attributes() const
+    auto has_predicate() const
         -> bool
     {
-        return static_cast<bool>(attrs);
+        return static_cast<bool>(pred);
+    }
+
+    auto has_function_declaration() const
+        -> bool
+    {
+        return static_cast<bool>(decl)
+            // && decl->is_function()
+            ;
     }
 
     auto get_label() const
@@ -1711,9 +1720,12 @@ struct match_node_node
         -> void
     {
         v.start(*this, depth);
-        if (attrs) {
-            attrs->visit(v, depth + 1);
+        if (pred) {
+            pred->visit(v, depth + 1);
         }
+        // if (decl) {
+        //     decl->visit(v, depth + 1);
+        // }
         v.end(*this, depth);
     }
 };
@@ -6779,14 +6791,28 @@ public:
             && peek(1)->type() == lexeme::LeftBrace
         ) {
             // n->open_brace = curr().position();
-            auto open_brace = peek(1);
+            // auto open_brace = peek(1);
             next(2);
-            if (auto a = expression_list(open_brace)) {
-                n->attrs = std::move(a);
-                n->attrs->close_paren = &curr();
+            if (auto loe = logical_or_expression()) {
+                n->pred = std::move(loe);
                 next();
             } else {
                 return {};
+            }
+        } else if (
+            curr().type() == lexeme::Colon
+        ) {
+            if (auto ud = unnamed_declaration(curr().position())) {
+                if (!ud->is_function()) {
+                    return {};
+                }
+                n->decl = std::move(ud);
+            } else {
+                error(
+                    "node attribure must be either a predicate expression "
+                    "or a predicate function (lambda)",
+                    true, {}, true
+                );
             }
         }
         
