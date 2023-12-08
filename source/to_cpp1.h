@@ -3794,7 +3794,64 @@ public:
         //     "[&](auto &&g) requires cpp2::Graph<decltype(g)> { return true; }",
         //     n.position()
         // );
-        printer.print_cpp1(mg.generate(), n.position().lineno);
+        auto print_f = std::bind(
+            &positional_printer::print_cpp2,
+            &printer,
+            std::placeholders::_1,
+            n.position(),
+            false,
+            false
+        );
+        auto emit_f1 = std::bind(
+            static_cast<
+                void (cppfront::*)(logical_or_expression_node const&)
+            >(&cppfront::emit),
+            this,
+            std::placeholders::_1
+        );
+        auto emit_f2 = std::bind(
+            static_cast<
+                void (cppfront::*)(
+                    function_type_node const&,
+                    token const*,
+                    bool,
+                    bool,
+                    std::string
+                )
+            >(&cppfront::emit),
+            this,
+            std::placeholders::_1,
+            nullptr,
+            false,
+            false,
+            ""
+        );
+        // bool                            can_have_semicolon  = true,
+        // source_position                 function_body_start = {},
+        // bool                            function_void_ret   = false,
+        // function_prolog const&          function_prolog     = {},
+        // std::vector<std::string> const& function_epilog     = {}
+        auto emit_f3 = std::bind(
+            static_cast<
+                void (cppfront::*)(
+                    statement_node const&,
+                    bool,
+                    source_position,
+                    bool,
+                    function_prolog const&,
+                    std::vector<std::string> const&
+                )
+            >(&cppfront::emit),
+            this,
+            std::placeholders::_1,
+            true,
+            source_position{},
+            false,
+            function_prolog{},
+            std::vector<std::string>{}
+        );
+        mg.generate(print_f, emit_f1, emit_f2, emit_f3);
+        // printer.print_cpp1(mg.generate(), n.position().lineno);
     }
 
 

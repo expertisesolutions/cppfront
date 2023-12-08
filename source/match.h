@@ -10,6 +10,7 @@
 #include <cctype>
 #include <concepts>
 #include <iterator>
+#include <functional>
 #include <map>
 #include <optional>
 #include <queue>
@@ -52,17 +53,23 @@ struct match_generator {
     struct node {
         /// TODO: should label be optional? Maybe '_' for anything
         std::optional<std::string> label = {};
-        expression_list_node *attrs = nullptr;
+        logical_or_expression_node *pred = nullptr;
+        declaration_node *decl = nullptr;
+        // expression_list_node *attrs = nullptr;
         std::vector<size_t> adj_nodes;
 
         node() = default;
 
         node(const auto &l)
-            : label{l}, attrs{}
+            : label{l}, pred{}, decl{}// , attrs{}
         { }
 
-        node(const auto &l, auto &&a)
-            : label {l}, attrs{a}
+        node(const auto &l, auto &&e)
+            : label{l}, pred{e}, decl{}// , attrs{}
+        { }
+
+        node(const auto &l, auto &&e, auto &&f)
+            : label{l}, pred{e}, decl{f}// , attrs{}
         { }
     };
 
@@ -94,15 +101,32 @@ private:
             it == nodes_map.end()
         ) {
             nodes_map.emplace(label, nodes.size());
-            nodes.emplace_back(label, mnn->attrs.get());
+            // nodes.emplace_back(label, mnn->attrs.get());
+            nodes.emplace_back(label, mnn->pred.get(), mnn->decl.get());
         } else {
             auto &n = nodes[it->second];
-            if (mnn->attrs) {
-                if (n.attrs) {
-                    /// TODO: attributes for node are defined more than once
+            // if (mnn->attrs) {
+            //     if (n.attrs) {
+            //         /// TODO: attributes for node are defined more than once
+            //         /// report that
+            //     } else {
+            //         n.attrs = mnn->attrs.get();
+            //     }
+            // }
+            if (mnn->pred) {
+                if (n.pred) {
+                    /// TODO: predicate for node is defined more than once
                     /// report that
                 } else {
-                    n.attrs = mnn->attrs.get();
+                    n.pred = mnn->pred.get();
+                }
+            }
+            if (mnn->decl && mnn->decl->is_function()) {
+                if (n.decl) {
+                    /// TODO: lambda function for node is defined more than once
+                    /// report that
+                } else {
+                    n.decl = mnn->decl.get();
                 }
             }
         }
@@ -192,13 +216,42 @@ private:
         assert (msn);
         assert (msn->match_stmts);
         const auto &exprs = msn->match_stmts->expressions;
+        auto i = 0;
         for (const auto &expr : exprs) {
+            std::cout << "Parsing match expression " << ++i << std::endl;
             parse_match_expression(expr.get());
+        }
+        i = 0;
+        for (const auto &n : nodes) {
+            std::cout << "node " << i++ << ", " << *n.label << std::endl;
+            std::cout << "sons\n";
+            for (const auto s : n.adj_nodes) {
+                std::cout << "\t" << s << ", " << *nodes[s].label << std::endl;
+                if (
+                    auto it = edges_attrs_map.find({i - 1, s});
+                    it != edges_attrs_map.end()
+                ) {
+                    if (it->second) {
+                        std::cout << "\t" << *it->second << std::endl;
+                    } else {
+                        std::cout << "\t" << "[empty]" << std::endl;
+                    }
+                } else {
+                    std::cout << "Could not find edge for given nodes" << std::endl;
+                }
+            }
         }
     }
 
 public:
-    auto generate()
+    enum phase { all=0, phase1, phase2, phase3 };
+    auto generate(
+        std::function<void(std::string_view)> const& print_f,
+        std::function<void(logical_or_expression_node const&)> const& emit_loen_f,
+        std::function<void(function_type_node const&)> const& emit_ftn_f,
+        std::function<void(statement_node const&)> const& emit_sn_f,
+        phase p = all
+    )
         -> std::string
     {
         using namespace std::literals::string_view_literals;
@@ -206,14 +259,14 @@ public:
         
         auto oss = std::ostringstream{};
         constexpr auto header_and_captures =
-            "[&](auto &&g, std::type_identity<auto> t) -> std::set<std::tuple<size_t, size_t>>"
+            "[&](auto &&g) -> std::set<std::tuple<size_t, size_t>>"
             " requires cpp2::Graph<decltype(g)> {"
             ""sv;
         constexpr auto type_definitions =
             "using graph_attrs = decltype(get_attrs(g, 0));"
             "using graph_adj_list = decltype(get_adj_list(g, 0));"
             // "using graph_attrs_pred = decltype(get_default_attrs_pred(g));"
-            "using graph_attrs_pred = typename decltype(t)::type;"
+            "using graph_attrs_pred = std::function<bool(graph_attrs const&)>;"
             ""sv;
         constexpr auto match_lambda_definition =
             "auto match = [](graph_attrs_pred const& pred, auto&& attrs){ return pred(attrs); };"
@@ -252,15 +305,6 @@ public:
             ""sv;
 
         oss.str("");
-        for (const auto &n : nodes) {
-            oss << "pattern_nodes.push_back({{";
-            const char *sep = "";
-            for (const auto adj : n.adj_nodes) {
-                oss << sep << std::to_string(adj);
-                sep = ", ";
-            }
-            oss << "}, {" << (n.attrs ? std::to_string(*n.attrs) : ""s) << "}});";
-        }
         const auto fill_out_pattern_nodes = oss.str();
 
         constexpr auto fill_out_anc_desc =
@@ -441,19 +485,80 @@ public:
             "}"
             ""sv;
 
-        oss.str("");
-        oss << header_and_captures
-            << type_definitions << match_lambda_definition
-            << distance_matrix
-            << define_anc_desc << define_mat_premv
-            << define_graph_size << define_pattern_size
-            << define_pattern_edges_map << fill_out_edges_map
-            << define_pattern_nodes << fill_out_pattern_nodes
-            << fill_out_anc_desc
-            << fill_out_mat_premv
-            << main_loop_condition_function << main_loop
-            << relation_and_return
-            << end_of_lambda;
+        auto do_phase1 = [&] {
+            oss.str("");
+            oss << header_and_captures
+                << type_definitions << match_lambda_definition
+                << distance_matrix
+                << define_anc_desc << define_mat_premv
+                << define_graph_size << define_pattern_size
+                << define_pattern_edges_map << fill_out_edges_map
+                << define_pattern_nodes;
+            print_f(oss.str());
+        };
+
+        auto do_phase2 = [&] {
+            oss.str("");
+            // oss << fill_out_pattern_nodes;
+            for (const auto &n : nodes) {
+                // oss << "pattern_nodes.push_back({{";
+                print_f("pattern_nodes.push_back({{");
+                const char *sep = "";
+                for (const auto adj : n.adj_nodes) {
+                    // oss << sep << std::to_string(adj);
+                    print_f(sep);
+                    print_f(std::to_string(adj));
+                    sep = ", ";
+                }
+                // oss << "}, {" << (n.attrs ? std::to_string(*n.attrs) : ""s) << "}});";
+                // oss << "}, " << (
+                //     n.pred ?
+                //         "[] (graph_attrs const& "s + *n.label + ") { return "s
+                //             + std::to_string(*n.pred) + "; }"s
+                //         : "[] (graph_attrs const&){ return true; }"s
+                // ) << "});";
+                print_f("}, ");
+                if (n.pred) {
+                    print_f("[=] (graph_attrs const& ");
+                    print_f(*n.label);
+                    print_f(") { return ");
+                    emit_loen_f(*n.pred);
+                    print_f("; }");
+                } else if (n.decl) {
+                    emit_ftn_f(*std::get<declaration_node::a_function>(n.decl->type));
+                    /// TODO: the code below is just a dummy. Must print the lambda here
+                    print_f("{ return true; }");
+                    // emit_sn_f(*n.decl->initializer);
+                } else {
+                    print_f("[] (graph_attrs const&){ return true; }");
+                }
+                print_f("});");
+            }
+        };
+
+        auto do_phase3 = [&] {
+            oss.str("");
+            oss << fill_out_anc_desc
+                << fill_out_mat_premv
+                << main_loop_condition_function << main_loop
+                << relation_and_return
+                << end_of_lambda;
+            print_f(oss.str());
+        };
+
+        if (p == all) {
+            do_phase1();
+            do_phase2();
+            do_phase3();
+        } else if (p == phase1) {
+            do_phase1();
+        } else if (p == phase2) {
+            do_phase2();
+        } else if (p == phase3) {
+            do_phase3();
+        } else {
+            /// TODO: report error
+        }
 
         return oss.str();
     }
