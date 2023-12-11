@@ -248,8 +248,7 @@ public:
     auto generate(
         std::function<void(std::string_view)> const& print_f,
         std::function<void(logical_or_expression_node const&)> const& emit_loen_f,
-        std::function<void(function_type_node const&)> const& emit_ftn_f,
-        std::function<void(statement_node const&)> const& emit_sn_f,
+        std::function<void(declaration_node const&)> const& emit_dn_f,
         phase p = all
     )
         -> std::string
@@ -525,10 +524,9 @@ public:
                     emit_loen_f(*n.pred);
                     print_f("; }");
                 } else if (n.decl) {
-                    emit_ftn_f(*std::get<declaration_node::a_function>(n.decl->type));
+                    emit_dn_f(*n.decl);
                     /// TODO: the code below is just a dummy. Must print the lambda here
-                    print_f("{ return true; }");
-                    // emit_sn_f(*n.decl->initializer);
+                    // print_f("{ return true; }");
                 } else {
                     print_f("[] (graph_attrs const&){ return true; }");
                 }

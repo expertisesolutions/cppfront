@@ -3809,49 +3809,19 @@ public:
             this,
             std::placeholders::_1
         );
+        // auto capture = std::string{"[=]"};
         auto emit_f2 = std::bind(
             static_cast<
                 void (cppfront::*)(
-                    function_type_node const&,
-                    token const*,
-                    bool,
-                    bool,
-                    std::string
+                    declaration_node const&,
+                    std::string const&
                 )
             >(&cppfront::emit),
             this,
             std::placeholders::_1,
-            nullptr,
-            false,
-            false,
-            ""
+            "[=]"
         );
-        // bool                            can_have_semicolon  = true,
-        // source_position                 function_body_start = {},
-        // bool                            function_void_ret   = false,
-        // function_prolog const&          function_prolog     = {},
-        // std::vector<std::string> const& function_epilog     = {}
-        auto emit_f3 = std::bind(
-            static_cast<
-                void (cppfront::*)(
-                    statement_node const&,
-                    bool,
-                    source_position,
-                    bool,
-                    function_prolog const&,
-                    std::vector<std::string> const&
-                )
-            >(&cppfront::emit),
-            this,
-            std::placeholders::_1,
-            true,
-            source_position{},
-            false,
-            function_prolog{},
-            std::vector<std::string>{}
-        );
-        mg.generate(print_f, emit_f1, emit_f2, emit_f3);
-        // printer.print_cpp1(mg.generate(), n.position().lineno);
+        mg.generate(print_f, emit_f1, emit_f2);
     }
 
 
@@ -4457,7 +4427,6 @@ public:
         else {
             emit(*n.parameters);
         }
-
         //  For now, adding implicit noexcept only for move/swap/dtor functions
         if (
             n.is_move()
