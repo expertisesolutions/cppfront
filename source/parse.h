@@ -1678,6 +1678,35 @@ struct selection_statement_node
 
 struct match_expression_node;
 
+struct match_node_indexing_node
+{
+    source_position open_bracket;
+    source_position close_bracket;
+    token const* index = nullptr;
+
+    match_node_indexing_node(
+        source_position o = {},
+        source_position c = {}
+    )
+        : open_bracket{o}, close_bracket{c}
+    { }
+
+    auto get_index() const
+        -> token const*
+    {
+        assert (index);
+        return index;
+    }
+
+    auto visit(auto&& v, int depth)
+        -> void
+    {
+        v.start(*this, depth);
+
+        v.end(*this, depth);
+    }
+};
+
 struct match_node_node
 {
     source_position open_paren;
@@ -1687,6 +1716,7 @@ struct match_node_node
     // source_position close_brace;
     std::unique_ptr<logical_or_expression_node> pred = {};
     std::unique_ptr<declaration_node> decl = {};
+    std::unique_ptr<match_node_indexing_node> index = {};
 
     match_node_node(
         source_position o = {},
@@ -6768,14 +6798,20 @@ private:
     }
 public:
     //G match-node:
-    //G     '(' identifier (':' '{' match-node-attrs '}')? ')'
+    //G     match-node-indexing? '(' identifier ':' '{' logical-or-expression '})'
+    //G     match-node-indexing? '(' identifier (function) declaration ')'
     auto match_node()
         -> std::unique_ptr<match_node_node>
     {
+        auto n = std::make_unique<match_node_node>();
+        if (curr().type() == lexeme::LeftBracket) {
+            if (auto mni = match_node_indexing()) {
+                n->index = std::move(mni);
+            }
+        }
         if (curr().type() != lexeme::LeftParen) {
             return {};
         }
-        auto n = std::make_unique<match_node_node>();
         n->open_paren = curr().position();
         next();
 
@@ -6826,12 +6862,40 @@ public:
         return n;
     }
 
+    //G match-node-indexing
+    //G'    '[' number-literal ']'
+    auto match_node_indexing()
+        -> std::unique_ptr<match_node_indexing_node>
+    {
+        auto n = std::make_unique<match_node_indexing_node>(curr().position());
+        next();
+        if (
+            curr().type() != lexeme::DecimalLiteral
+            && curr().type() != lexeme::HexadecimalLiteral
+            && curr().type() != lexeme::BinaryLiteral
+            && curr().as_string_view() != "_"
+        ) {
+            error("index attribute must be an integer literal or _", true, {}, true);
+            return {};
+        }
+        n->index = &curr();
+        next();
+        if (curr().type() == lexeme::RightBracket) {
+            n->close_bracket = curr().position();
+            next();
+            return n;
+        }
+        // else
+        return {};
+    }
+
     //G match-edge-attrs
     //G     '{' number-literal '}'
     auto match_edge_attrs()
         -> std::unique_ptr<match_edge_attrs_node>
     {
         auto n = std::make_unique<match_edge_attrs_node>(curr().position());
+        next();
         if (
             curr().type() != lexeme::DecimalLiteral
             && curr().type() != lexeme::HexadecimalLiteral
@@ -6882,7 +6946,6 @@ public:
             error("a match edge attribute must be enclosed with { }");
             return {};
         }
-        next();
         if (auto e = match_edge_attrs()) {
             n->attrs = std::move(e);
         }

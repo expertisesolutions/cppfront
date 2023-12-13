@@ -42,6 +42,18 @@ auto to_string(const cpp2::expression_list_node &eln)
 
 namespace cpp2 {
 
+auto parse_integer_literal(std::string_view literal)
+    -> long
+{
+    auto attr_str = std::string{literal};
+    auto base = 0;
+    if (attr_str.starts_with("0b")) {
+        attr_str.erase(0, 2);
+        base = 2;
+    }
+    return std::stol(attr_str, nullptr, base);
+}
+
 template <typename ...args>
 using relation = std::set<std::tuple<args...>>;
 
@@ -57,6 +69,7 @@ struct match_generator {
         declaration_node *decl = nullptr;
         // expression_list_node *attrs = nullptr;
         std::vector<size_t> adj_nodes;
+        // std::vector<std::optional<long>> adj_nodes_indexes;
 
         node() = default;
 
@@ -76,7 +89,12 @@ struct match_generator {
     std::vector<node> nodes = {};
     /// TODO: if this is the case, then the member var "label" is unnecessary?
     std::unordered_map<std::string_view, size_t> nodes_map = {};
-    std::map<std::tuple<size_t, size_t>, std::optional<size_t>> edges_attrs_map;
+    std::map<
+        // source, target
+        std::tuple<size_t, size_t>,
+        // edge attribute, node indexing
+        std::tuple<std::optional<size_t>, std::optional<long>>
+    > edges_attrs_map;
     std::vector<error_entry> &errors;
 
     match_generator() = delete;
@@ -149,35 +167,25 @@ private:
 
         if (it1 != end && it2 != end) {
             nodes[it1->second].adj_nodes.push_back(it2->second);
+            auto opt_attrs = std::optional<size_t>{};
             if (!mean || !mean->lhs_attrs) {
-                edges_attrs_map.emplace(
-                    std::tuple{it1->second, it2->second},
-                    std::optional<size_t>{1}
-                );
-            } else if (mean->is_wildcard()) {
-                // unbounded case
-                edges_attrs_map.emplace(
-                    std::tuple{it1->second, it2->second},
-                    std::nullopt
-                );
-            } else {
-                auto attr_str = std::string{mean->lhs_attrs->as_string_view()};
-                auto base = 0;
-                if (attr_str.starts_with("0b")) {
-                    attr_str.erase(0, 2);
-                    base = 2;
-                }
-                auto attr = std::stoull(attr_str, nullptr, base);
-                if (attr != 0) {
-                    edges_attrs_map.emplace(
-                        std::tuple{it1->second, it2->second}, attr
-                    );
-                } else {
-                    edges_attrs_map.emplace(
-                        std::tuple{it1->second, it2->second}, std::nullopt
-                    );
+                opt_attrs = 1;
+            } else if (mean && mean->lhs_attrs && !mean->is_wildcard()) {
+                auto attr = parse_integer_literal(mean->lhs_attrs->as_string_view());
+                if (attr > 0) {
+                    opt_attrs = attr;
                 }
             }
+            auto opt_index = std::optional<long>{};
+            if (mnn2->index) {
+                opt_index = parse_integer_literal(
+                    mnn2->index->get_index()->as_string_view()
+                );
+            }
+            edges_attrs_map.emplace(
+                std::tuple{it1->second, it2->second},
+                std::tuple{opt_attrs, opt_index}
+            );
         } else {
             assert (!"The nodes were not inserted previously");
         }
@@ -231,8 +239,20 @@ private:
                     auto it = edges_attrs_map.find({i - 1, s});
                     it != edges_attrs_map.end()
                 ) {
-                    if (it->second) {
-                        std::cout << "\t" << *it->second << std::endl;
+                    if (
+                        auto opt_attrs = std::get<0>(it->second);
+                        opt_attrs
+                    ) {
+                        std::cout << "\t" << *opt_attrs;
+                    } else {
+                        std::cout << "\t" << "[empty]";
+                    }
+                    std::cout << ", ";
+                    if (
+                        auto opt_index = std::get<1>(it->second);
+                        opt_index
+                    ) {
+                        std::cout << "\t" << *opt_index << std::endl;
                     } else {
                         std::cout << "\t" << "[empty]" << std::endl;
                     }
@@ -287,15 +307,17 @@ public:
         const auto define_pattern_size =
             "constexpr auto pattern_size = std::size_t{"s + std::to_string(nodes.size()) + "};"s;
         constexpr auto define_pattern_edges_map =
-            "auto pattern_edges_map = std::map<std::tuple<size_t, size_t>, std::optional<int>>{};"
+            "auto pattern_edges_map = std::map<std::tuple<size_t, size_t>, std::tuple<std::optional<size_t>, std::optional<long>>>{};"
             ""sv;
         
         oss.str("");
-        for (const auto [edge, attrs] : edges_attrs_map) {
+        for (const auto [edge, attrs_index] : edges_attrs_map) {
+            const auto [attrs, index] = attrs_index;
             const auto [source, sink] = edge;
             oss << "pattern_edges_map.insert({{" << std::to_string(source) << ", "
-                << std::to_string(sink) << "}, "
-                << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << "});";
+                << std::to_string(sink) << "}, {"
+                << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << ", "
+                << (index ? std::to_string(*index) : "std::nullopt"s) << "}});";
         }
         const auto fill_out_edges_map = oss.str();
 
@@ -307,8 +329,9 @@ public:
         const auto fill_out_pattern_nodes = oss.str();
 
         constexpr auto fill_out_anc_desc =
-            "for (const auto [edge, edge_value] : pattern_edges_map) {"
+            "for (const auto [edge, edge_value_index] : pattern_edges_map) {"
             "    const auto [ip_, ip] = edge;"
+            "    const auto [edge_value, edge_index] = edge_value_index;"
             "    const auto &u_prime = pattern_nodes[ip_];"
             "    const auto &u = pattern_nodes[ip];"
             "    for (size_t i = 0; i < graph_size; ++i) {"
@@ -372,7 +395,8 @@ public:
             "                pattern_edges_map.begin(),"
             "                pattern_edges_map.end(),"
             "                [&pattern_nodes, &mat, &X, &match, &v_prime_attrs, ip, i_](auto &&edge_value_pair) {"
-            "                    const auto [edge, value] = edge_value_pair;"
+            "                    const auto [edge, value_index] = edge_value_pair;"
+            "                    const auto [value, index] = value_index;"
             "                    if (std::get<1>(edge) != ip) {"
             "                        return false;"
             "                    }"
@@ -421,7 +445,7 @@ public:
             "auto ip_opt = decltype(loop_cond()){};"
             "while (ip_opt = loop_cond()) {"
             "    const auto ip = *ip_opt;"
-            "    for (const auto &[edge, value] : pattern_edges_map) {"
+            "    for (const auto &[edge, value_index] : pattern_edges_map) {"
             "        if (std::get<1>(edge) != ip)"
             "            continue;"
             "        const auto ip_ = std::get<0>(edge);"
@@ -431,7 +455,7 @@ public:
             "                mat[ip_].erase(i1);"
             "                if (mat[ip_].empty())"
             "                    return std::set<std::tuple<size_t, size_t>>{};"
-            "                for (const auto &[edge, value] : pattern_edges_map) {"
+            "                for (const auto &[edge, value_index] : pattern_edges_map) {"
             "                    if (std::get<1>(edge) != ip_)"
             "                        continue;"
             "                    const auto ip__ = std::get<0>(edge);"
@@ -468,6 +492,38 @@ public:
             "    premv[ip].clear();"
             "}"
             ""sv;
+
+        constexpr auto filter_mat_for_index_constraints = 
+            "for (const auto &[edge, attr_index] : pattern_edges_map) {"
+            "    const auto [ip_, ip] = edge;"
+            "    const auto index = std::get<1>(attr_index);"
+            "    if (index) {"
+            "        auto& mat_u_prime_range = mat[ip_];"
+            "        auto& mat_u_range = mat[ip];"
+            "        for (const auto i_ : mat_u_prime_range) {"
+            "            for (const auto i : mat_u_range) {"
+            "                const auto &v_prime_adj = get_adj_list(g, i_);"
+            "                const auto real_index = *index > 0 ?"
+            "                    *index : *index + std::ssize(v_prime_adj);"
+            "                if (real_index < 0 || real_index >= std::ssize(v_prime_adj)) {"
+            "                    mat[ip_].erase(i_);"
+            "                    mat[ip].erase(i);"
+            "                    continue;"
+            "                }"
+            "                const auto index_of_v_in_v_prime_adj = [&v_prime_adj, i] -> long {"
+            "                    const auto it = std::find(v_prime_adj.begin(), v_prime_adj.end(), i);"
+            "                    return it != v_prime_adj.end() ?"
+            "                        std::distance(v_prime_adj.begin(), it)"
+            "                            : -1;"
+            "                }();"
+            "                if (index_of_v_in_v_prime_adj != real_index) {"
+            "                    mat[ip_].erase(i_);"
+            "                    mat[ip].erase(i);"
+            "                }"
+            "            }"
+            "        }"
+            "    }"
+            "}"sv;
 
         constexpr auto relation_and_return =
             "auto S = std::set<std::tuple<size_t, size_t>>{};"
@@ -539,6 +595,7 @@ public:
             oss << fill_out_anc_desc
                 << fill_out_mat_premv
                 << main_loop_condition_function << main_loop
+                << filter_mat_for_index_constraints
                 << relation_and_return
                 << end_of_lambda;
             print_f(oss.str());
