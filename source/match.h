@@ -278,7 +278,7 @@ public:
         
         auto oss = std::ostringstream{};
         constexpr auto header_and_captures =
-            "[&](auto &&g) -> std::set<std::tuple<size_t, size_t>>"
+            "[](auto const &g) -> std::set<std::tuple<size_t, size_t>>"
             " requires cpp2::Graph<decltype(g)> {"
             ""sv;
         constexpr auto type_definitions =
@@ -496,14 +496,14 @@ public:
         constexpr auto filter_mat_for_index_constraints = 
             "for (const auto &[edge, attr_index] : pattern_edges_map) {"
             "    const auto [ip_, ip] = edge;"
-            "    const auto index = std::get<1>(attr_index);"
-            "    if (index) {"
-            "        auto& mat_u_prime_range = mat[ip_];"
-            "        auto& mat_u_range = mat[ip];"
+            "    const auto [attr, index] = attr_index;"
+            "    if (index && attr && *attr == 1) {"
+            "        auto &mat_u_prime_range = mat[ip_];"
+            "        auto &mat_u_range = mat[ip];"
             "        for (const auto i_ : mat_u_prime_range) {"
             "            for (const auto i : mat_u_range) {"
             "                const auto &v_prime_adj = get_adj_list(g, i_);"
-            "                const auto real_index = *index > 0 ?"
+            "                const auto real_index = *index >= 0 ?"
             "                    *index : *index + std::ssize(v_prime_adj);"
             "                if (real_index < 0 || real_index >= std::ssize(v_prime_adj)) {"
             "                    mat[ip_].erase(i_);"
@@ -557,7 +557,7 @@ public:
             // oss << fill_out_pattern_nodes;
             for (const auto &n : nodes) {
                 // oss << "pattern_nodes.push_back({{";
-                print_f("pattern_nodes.push_back({{");
+                print_f("pattern_nodes.push_back({std::vector<size_t>{");
                 const char *sep = "";
                 for (const auto adj : n.adj_nodes) {
                     // oss << sep << std::to_string(adj);
@@ -572,7 +572,7 @@ public:
                 //             + std::to_string(*n.pred) + "; }"s
                 //         : "[] (graph_attrs const&){ return true; }"s
                 // ) << "});";
-                print_f("}, ");
+                print_f("}, graph_attrs_pred{");
                 if (n.pred) {
                     print_f("[=] (graph_attrs const& ");
                     print_f(*n.label);
@@ -586,7 +586,7 @@ public:
                 } else {
                     print_f("[] (graph_attrs const&){ return true; }");
                 }
-                print_f("});");
+                print_f("}});");
             }
         };
 
