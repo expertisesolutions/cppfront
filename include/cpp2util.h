@@ -1958,16 +1958,16 @@ concept Graph = requires(G g)
     { get_size(g) } -> std::convertible_to<size_t>;
     get_adj_list(g, 0);
     { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
-    { *get_adj_list(g, 0).begin() } -> std::convertible_to<size_t>;
+    { *get_adj_list(g, 0).end() } -> std::convertible_to<size_t>;
     { get_adj_list(g, 0).size() } -> std::convertible_to<size_t>;
-    ++get_adj_list(g, 0).begin();
+    get_adj_list(g, 0).begin() + 1;
     get_attrs(g, 0);
-    get_default_attrs_pred(g);
-    { get_default_attrs_pred(g)(get_attrs(g, 0)) } -> std::convertible_to<bool>;
+    // get_default_attrs_pred(g);
+    // { get_default_attrs_pred(g)(get_attrs(g, 0)) } -> std::convertible_to<bool>;
 };
 
 enum class walk_type : std::uint8_t { bfs, dfs };
-template <Graph G, walk_type wt>
+template <walk_type wt, Graph G>
 auto search(G const& g, size_t source)
     -> std::vector<std::optional<size_t>>
 {
@@ -2082,7 +2082,7 @@ auto create_distance_matrix(G const& g)
     auto dist_matrix = std::vector<std::vector<std::optional<size_t>>>{};
 
     for (v_type i = 0; i < graph_size; ++i) {
-        auto parent = search<G, walk_type::bfs>(g, i);
+        auto parent = search<walk_type::bfs>(g, i);
 
         dist_matrix.push_back(calc_distance(parent));
     }
