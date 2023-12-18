@@ -3809,17 +3809,18 @@ public:
             this,
             std::placeholders::_1
         );
-        // auto capture = std::string{"[=]"};
         auto emit_f2 = std::bind(
             static_cast<
                 void (cppfront::*)(
-                    declaration_node const&,
-                    std::string const&
+                    compound_statement_node const&,
+                    function_prolog const&,
+                    std::vector<std::string> const&
                 )
             >(&cppfront::emit),
             this,
             std::placeholders::_1,
-            "[=]"
+            function_prolog{},
+            std::vector<std::string>{}
         );
         mg.generate(print_f, emit_f1, emit_f2);
     }

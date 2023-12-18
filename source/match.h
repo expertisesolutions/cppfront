@@ -66,7 +66,7 @@ struct match_generator {
         /// TODO: should label be optional? Maybe '_' for anything
         std::optional<std::string> label = {};
         logical_or_expression_node *pred = nullptr;
-        declaration_node *decl = nullptr;
+        compound_statement_node *func = nullptr;
         // expression_list_node *attrs = nullptr;
         std::vector<size_t> adj_nodes;
         // std::vector<std::optional<long>> adj_nodes_indexes;
@@ -74,15 +74,15 @@ struct match_generator {
         node() = default;
 
         node(const auto &l)
-            : label{l}, pred{}, decl{}// , attrs{}
+            : label{l}, pred{}, func{}// , attrs{}
         { }
 
         node(const auto &l, auto &&e)
-            : label{l}, pred{e}, decl{}// , attrs{}
+            : label{l}, pred{e}, func{}// , attrs{}
         { }
 
         node(const auto &l, auto &&e, auto &&f)
-            : label{l}, pred{e}, decl{f}// , attrs{}
+            : label{l}, pred{e}, func{f}// , attrs{}
         { }
     };
 
@@ -120,7 +120,7 @@ private:
         ) {
             nodes_map.emplace(label, nodes.size());
             // nodes.emplace_back(label, mnn->attrs.get());
-            nodes.emplace_back(label, mnn->pred.get(), mnn->decl.get());
+            nodes.emplace_back(label, mnn->pred.get(), mnn->func.get());
         } else {
             auto &n = nodes[it->second];
             // if (mnn->attrs) {
@@ -139,12 +139,12 @@ private:
                     n.pred = mnn->pred.get();
                 }
             }
-            if (mnn->decl && mnn->decl->is_function()) {
-                if (n.decl) {
+            if (mnn->func) {
+                if (n.func) {
                     /// TODO: lambda function for node is defined more than once
                     /// report that
                 } else {
-                    n.decl = mnn->decl.get();
+                    n.func = mnn->func.get();
                 }
             }
         }
@@ -268,7 +268,7 @@ public:
     auto generate(
         std::function<void(std::string_view)> const& print_f,
         std::function<void(logical_or_expression_node const&)> const& emit_loen_f,
-        std::function<void(declaration_node const&)> const& emit_dn_f,
+        std::function<void(compound_statement_node const&)> const& emit_csn_f,
         phase p = all
     )
         -> std::string
@@ -579,9 +579,10 @@ public:
                     print_f(") { return ");
                     emit_loen_f(*n.pred);
                     print_f("; }");
-                } else if (n.decl) {
-                    emit_dn_f(*n.decl);
-                    /// TODO: the code below is just a dummy. Must print the lambda here
+                } else if (n.func) {
+                    print_f("[] (graph_attrs const &"s + *n.label + ")"s);
+                    emit_csn_f(*n.func);
+                    // emit_dn_f(*n.func);
                     // print_f("{ return true; }");
                 } else {
                     print_f("[] (graph_attrs const&){ return true; }");

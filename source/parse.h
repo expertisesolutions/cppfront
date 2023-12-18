@@ -1715,8 +1715,9 @@ struct match_node_node
     // source_position open_brace;
     // source_position close_brace;
     std::unique_ptr<logical_or_expression_node> pred = {};
-    std::unique_ptr<declaration_node> decl = {};
+    std::unique_ptr<compound_statement_node> func = {};
     std::unique_ptr<match_node_indexing_node> index = {};
+    std::unique_ptr<compound_statement_node> action = {};
 
     match_node_node(
         source_position o = {},
@@ -1734,9 +1735,7 @@ struct match_node_node
     auto has_function_declaration() const
         -> bool
     {
-        return static_cast<bool>(decl)
-            // && decl->is_function()
-            ;
+        return static_cast<bool>(func);
     }
 
     auto get_label() const
@@ -1752,6 +1751,12 @@ struct match_node_node
         v.start(*this, depth);
         if (pred) {
             pred->visit(v, depth + 1);
+        }
+        if (func) {
+            func->visit(v, depth + 1);
+        }
+        if (action) {
+            action->visit(v, depth + 1);
         }
         // if (decl) {
         //     decl->visit(v, depth + 1);
@@ -6798,8 +6803,10 @@ private:
     }
 public:
     //G match-node:
-    //G     match-node-indexing? '(' identifier ':' '{' logical-or-expression '})'
-    //G     match-node-indexing? '(' identifier (function) declaration ')'
+    //G     match-node-indexing? '(' identifier ':' logical-or-expression action? ')'
+    //G     match-node-indexing? '(' identifier ':' compound-statement action? ')'
+    //G action:
+    //G     ';' compound-statement
     auto match_node()
         -> std::unique_ptr<match_node_node>
     {
@@ -6824,34 +6831,46 @@ public:
         if (
             curr().type() == lexeme::Colon
             && peek(1)
-            && peek(1)->type() == lexeme::LeftBrace
+            && peek(1)->type() != lexeme::LeftBrace
         ) {
             // n->open_brace = curr().position();
             // auto open_brace = peek(1);
-            next(2);
+            next();
             if (auto loe = logical_or_expression()) {
                 n->pred = std::move(loe);
-                next();
+                // next();
             } else {
                 return {};
             }
         } else if (
             curr().type() == lexeme::Colon
+            && peek(1)
+            && peek(1)->type() == lexeme::LeftBrace
         ) {
-            if (auto ud = unnamed_declaration(curr().position())) {
-                if (!ud->is_function()) {
-                    return {};
-                }
-                n->decl = std::move(ud);
+            next();
+            if (auto ce = compound_statement()) {
+                n->func = std::move(ce);
             } else {
                 error(
                     "node attribure must be either a predicate expression "
-                    "or a predicate function (lambda)",
+                    "or a predicate compound statement",
                     true, {}, true
                 );
             }
         }
-        
+
+        if (curr().type() == lexeme::Semicolon) {
+            next();
+            if (auto ce = compound_statement()) {
+                n->action = std::move(ce);
+            } else {
+                error(
+                    "there should be a compund statement after a semicolon inside "
+                    "node definition",
+                    true, {}, true
+                );
+            }
+        }
         if (curr().type() == lexeme::RightParen) {
             n->close_paren = curr().position();
             next();
