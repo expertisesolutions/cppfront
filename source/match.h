@@ -96,6 +96,7 @@ struct match_generator {
         std::tuple<std::optional<size_t>, std::optional<long>>
     > edges_attrs_map;
     std::vector<error_entry> &errors;
+    match_statement_node const* stmt = nullptr;
 
     match_generator() = delete;
 
@@ -103,7 +104,7 @@ struct match_generator {
         std::vector<error_entry> &e,
         match_statement_node const* n
     )
-        : errors{e}
+        : errors{e}, stmt{n}
     {
         parse(n);
     }
@@ -269,6 +270,7 @@ public:
         std::function<void(std::string_view)> const& print_f,
         std::function<void(logical_or_expression_node const&)> const& emit_loen_f,
         std::function<void(compound_statement_node const&)> const& emit_csn_f,
+        bool global_scope = false,
         phase p = all
     )
         -> std::string
@@ -277,8 +279,10 @@ public:
         using namespace std::literals::string_literals;
         
         auto oss = std::ostringstream{};
-        constexpr auto header_and_captures =
-            "[](auto const &g) -> std::set<std::tuple<size_t, size_t>>"
+        const auto capture = global_scope ?
+            "[]"sv : "[&]"sv;
+        constexpr auto header =
+            "(auto const &g) -> std::set<std::tuple<size_t, size_t>>"
             " requires cpp2::Graph<decltype(g)> {"
             ""sv;
         constexpr auto type_definitions =
@@ -324,6 +328,17 @@ public:
         constexpr auto define_pattern_nodes =
             "auto pattern_nodes = std::vector<std::tuple<std::vector<size_t>, graph_attrs_pred>>{};"
             ""sv;
+        constexpr auto define_pattern_nodes_label_map =
+            "auto pattern_nodes_label_map = std::unordered_map<std::string, size_t>{};"
+            ""sv;
+
+        oss.str("");
+        auto curr_idx = size_t{};
+        for (const auto &n : nodes) {
+            oss << "pattern_nodes_label_map.insert({" << std::quoted(*n.label) << ", "
+                << std::to_string(curr_idx++) << "});";
+        }
+        const auto fill_out_pattern_nodes_label_map = oss.str();
 
         oss.str("");
         const auto fill_out_pattern_nodes = oss.str();
@@ -542,7 +557,7 @@ public:
 
         auto do_phase1 = [&] {
             oss.str("");
-            oss << header_and_captures
+            oss << capture << header
                 << type_definitions << match_lambda_definition
                 << distance_matrix
                 << define_anc_desc << define_mat_premv
@@ -593,7 +608,9 @@ public:
 
         auto do_phase3 = [&] {
             oss.str("");
-            oss << fill_out_anc_desc
+            oss << define_pattern_nodes_label_map
+                << fill_out_pattern_nodes_label_map
+                << fill_out_anc_desc
                 << fill_out_mat_premv
                 << main_loop_condition_function << main_loop
                 << filter_mat_for_index_constraints

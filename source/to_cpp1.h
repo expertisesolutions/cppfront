@@ -3830,7 +3830,7 @@ public:
             function_prolog{},
             std::vector<std::string>{}
         );
-        mg.generate(print_f, emit_f1, emit_f2);
+        mg.generate(print_f, emit_f1, emit_f2, current_functions.empty());
     }
 
     //-----------------------------------------------------------------------
