@@ -1899,6 +1899,10 @@ public:
 
         for (auto const& x : n.statements) {
             assert(x);
+            debug(
+                std::string{"Emitting statement of content "}
+                + std::to_string(x->statement.index())
+            );
             emit(*x);
         }
 
@@ -3809,6 +3813,7 @@ public:
             this,
             std::placeholders::_1
         );
+        debug_compound = true;
         auto emit_f2 = std::bind(
             static_cast<
                 void (cppfront::*)(
@@ -3823,8 +3828,35 @@ public:
             std::vector<std::string>{}
         );
         mg.generate(print_f, emit_f1, emit_f2);
+        debug_compound = false;
     }
 
+
+    bool debug_compound = false;
+    void debug(std::string_view sv)
+    {
+        if (debug_compound) {
+            std::cout << sv << std::endl;
+        }
+    }
+
+    // void debug(std::string const& str)
+    // {
+    //     if (debug_compound) {
+    //         std::cout << str << std::endl;
+    //     }
+    // }
+
+    template <typename F>
+        requires ( requires (F f) { f(); } )
+    void debug(F &&f) 
+    {
+        if (debug_compound) {
+            std::cout << "Debugging f...\n";
+            f();
+            std::cout << "f was called" << std::endl;
+        }
+    }
 
     //-----------------------------------------------------------------------
     //
@@ -3839,6 +3871,7 @@ public:
         -> void
     {
         if (!sema.check(n)) {
+            // debug("Did not pass semantics check");
             return;
         }
 
@@ -5107,6 +5140,7 @@ public:
             && !sema.check(n)
             )
         {
+            debug("Could not emit due to phase2 and semantics check");
             return;
         }
 
@@ -5118,6 +5152,7 @@ public:
             && !n.is_type()
             )
         {
+            debug("Couldd not emit due to phase0");
             return;
         }
 
@@ -5317,6 +5352,7 @@ public:
         auto is_in_type = n.parent_is_type();
 
         if (!check_shadowing_of_type_scope_names(n)) {
+            debug("!check_shadowing_of_type_scope_names(n)");
             return;
         }
 
@@ -6245,6 +6281,12 @@ public:
             }
 
             printer.print_cpp2( "; ", n.position() );
+        } else {
+            debug(
+                std::string{"Does not meet object requirements, phase is "}
+                + std::to_string(printer.get_phase()) + " " + std::to_string(n.parent_is_namespace())
+                + std::to_string(n.parent_is_type()) + std::to_string(n.parent_is_function())
+            );
         }
     }
 
