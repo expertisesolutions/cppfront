@@ -2257,7 +2257,7 @@ public:
         //
         if (n.expression)
         {
-            assert(!current_functions.empty());
+            assert(!current_functions.empty() || !current_matches.empty());
             auto is_forward_return =
                 !function_returns.empty()
                 && function_returns.back().pass == passing_style::forward;
@@ -2327,8 +2327,11 @@ public:
             }
 
             if (
-                function_returns.empty()
-                || function_returns.back().param_list != &single_anon
+                current_matches.empty()
+                && (
+                    function_returns.empty()
+                    || function_returns.back().param_list != &single_anon
+                    )
                 )
             {
                 errors.emplace_back(
@@ -2340,8 +2343,11 @@ public:
         }
 
         else if (
-            !function_returns.empty()
-            && function_returns.back().param_list == &single_anon
+            current_matches.empty()
+            && (
+                !function_returns.empty()
+                && function_returns.back().param_list == &single_anon
+                )
             )
         {
             errors.emplace_back(
@@ -3783,12 +3789,14 @@ public:
         }
     }
 
-
+    std::vector<match_statement_node const*> current_matches;
     //-----------------------------------------------------------------------
     //
     auto emit(match_statement_node const& n)
         -> void
     {
+        current_matches.push_back(&n);
+        auto fn = finally([&] { current_matches.pop_back(); });
         if (!sema.check(n)) {
             return;
         }
@@ -3839,13 +3847,6 @@ public:
             std::cout << sv << std::endl;
         }
     }
-
-    // void debug(std::string const& str)
-    // {
-    //     if (debug_compound) {
-    //         std::cout << str << std::endl;
-    //     }
-    // }
 
     template <typename F>
         requires ( requires (F f) { f(); } )
@@ -6171,6 +6172,11 @@ public:
                     && printer.get_phase() == printer.phase2_func_defs
                     )
                 )
+                ||
+                (
+                    n.parent_is_object()
+                    && printer.get_phase() == printer.phase2_func_defs
+                    )
             )
         {
             auto& type = std::get<declaration_node::an_object>(n.type);
@@ -6284,7 +6290,10 @@ public:
         } else {
             debug(
                 std::string{"Does not meet object requirements, phase is "}
-                + std::to_string(printer.get_phase()) + " " + std::to_string(n.parent_is_namespace())
+                + std::to_string(printer.get_phase()) + ", parent is " + std::to_string(
+                    reinterpret_cast<long>(n.parent_declaration)
+                ) + " with index " + std::to_string(n.parent_declaration->type.index())
+                + " " + std::to_string(n.parent_is_namespace())
                 + std::to_string(n.parent_is_type()) + std::to_string(n.parent_is_function())
             );
         }
