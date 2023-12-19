@@ -56,8 +56,8 @@ get_default_attrs_pred: (_: my_graph) -> my_graph::pred = {
 
 main: () -> int = {
     m: _ = match {
-        (_0 :(in _0) -> _ ={return _0.contains("A");})-{2}->(_1:{_1.contains("SE")})-{1}->(_3:{_3.contains("DM,golf")})-{_}->(_0);
-        (_0)-{2}->(_2:{_2.contains("HR")})-{2}->(_3);
+        (_0:{ A := "A"; return _0.contains("A"); })-{2}->[0](_1: { return _1.contains("SE"); } )-{1}->(_3:{ return _3.contains("DM,golf"); })-{_}->[1](_0);
+        (_0)-{2}->[1](_2:{ return _2.contains("HR"); }; { return _2; } )-{2}->(_3);
     };
 
     g: my_graph = ();
@@ -88,4 +88,11 @@ main: () -> int = {
 
     for rel do (p)
         std::cout << std::get<0>(p) << ", " << std::get<1>(p) << "\n";
+    // 0, 0
+    // 1, 2
+    // 1, 3
+    // 2, 4
+    // 2, 5
+    // 3, 1
+    // 3, 3
 }
