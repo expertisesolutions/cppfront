@@ -67,6 +67,7 @@ struct match_generator {
         std::optional<std::string> label = {};
         logical_or_expression_node *pred = nullptr;
         compound_statement_node *func = nullptr;
+        compound_statement_node *action = nullptr;
         // expression_list_node *attrs = nullptr;
         std::vector<size_t> adj_nodes;
         // std::vector<std::optional<long>> adj_nodes_indexes;
@@ -74,15 +75,19 @@ struct match_generator {
         node() = default;
 
         node(const auto &l)
-            : label{l}, pred{}, func{}// , attrs{}
+            : label{l}, pred{}, func{}, action{}// , attrs{}
         { }
 
         node(const auto &l, auto &&e)
-            : label{l}, pred{e}, func{}// , attrs{}
+            : label{l}, pred{e}, func{}, action{}// , attrs{}
         { }
 
         node(const auto &l, auto &&e, auto &&f)
-            : label{l}, pred{e}, func{f}// , attrs{}
+            : label{l}, pred{e}, func{f}, action{}// , attrs{}
+        { }
+
+        node(const auto &l, auto &&e, auto &&f, auto &&a)
+            : label{l}, pred{e}, func{f}, action{a}// , attrs{}
         { }
     };
 
@@ -121,7 +126,7 @@ private:
         ) {
             nodes_map.emplace(label, nodes.size());
             // nodes.emplace_back(label, mnn->attrs.get());
-            nodes.emplace_back(label, mnn->pred.get(), mnn->func.get());
+            nodes.emplace_back(label, mnn->pred.get(), mnn->func.get(), mnn->action.get());
         } else {
             auto &n = nodes[it->second];
             // if (mnn->attrs) {
@@ -133,7 +138,7 @@ private:
             //     }
             // }
             if (mnn->pred) {
-                if (n.pred) {
+                if (n.pred || n.func) {
                     /// TODO: predicate for node is defined more than once
                     /// report that
                 } else {
@@ -141,11 +146,19 @@ private:
                 }
             }
             if (mnn->func) {
-                if (n.func) {
+                if (n.func || n.pred) {
                     /// TODO: lambda function for node is defined more than once
                     /// report that
                 } else {
                     n.func = mnn->func.get();
+                }
+            }
+            if (mnn->action) {
+                if (n.action) {
+                    /// TODO: lambda function for node action is defined more than once
+                    /// report that
+                } else {
+                    n.action = mnn->action.get();
                 }
             }
         }
@@ -233,6 +246,9 @@ private:
         i = 0;
         for (const auto &n : nodes) {
             std::cout << "node " << i++ << ", " << *n.label << std::endl;
+            std::cout << std::hex
+                      << "pred: " << reinterpret_cast<size_t>(n.func)
+                      << ", action: " << reinterpret_cast<size_t>(n.action) << std::endl;
             std::cout << "sons\n";
             for (const auto s : n.adj_nodes) {
                 std::cout << "\t" << s << ", " << *nodes[s].label << std::endl;
@@ -282,7 +298,7 @@ public:
         const auto capture = global_scope ?
             "[]"sv : "[&]"sv;
         constexpr auto header =
-            "(auto const &g) -> std::set<std::tuple<size_t, size_t>>"
+            "(auto const &g) -> std::set<std::tuple<size_t, size_t, std::any>, cpp2::less>"
             " requires cpp2::Graph<decltype(g)> {"
             ""sv;
         constexpr auto type_definitions =
@@ -318,8 +334,7 @@ public:
         for (const auto [edge, attrs_index] : edges_attrs_map) {
             const auto [attrs, index] = attrs_index;
             const auto [source, sink] = edge;
-            oss << "pattern_edges_map.insert({{" << std::to_string(source) << ", "
-                << std::to_string(sink) << "}, {"
+            oss << "pattern_edges_map.insert({{" << source << ", " << sink << "}, {"
                 << (attrs ? std::to_string(*attrs) : "std::nullopt"s) << ", "
                 << (index ? std::to_string(*index) : "std::nullopt"s) << "}});";
         }
@@ -328,20 +343,16 @@ public:
         constexpr auto define_pattern_nodes =
             "auto pattern_nodes = std::vector<std::tuple<std::vector<size_t>, graph_attrs_pred>>{};"
             ""sv;
-        constexpr auto define_pattern_nodes_label_map =
-            "auto pattern_nodes_label_map = std::unordered_map<std::string, size_t>{};"
-            ""sv;
-
+        
         oss.str("");
-        auto curr_idx = size_t{};
-        for (const auto &n : nodes) {
-            oss << "pattern_nodes_label_map.insert({" << std::quoted(*n.label) << ", "
-                << std::to_string(curr_idx++) << "});";
+        oss << "auto pattern_nodes_action_map = std::unordered_map<size_t, std::function<std::any(";
+        const char *sep = "";
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            oss << sep << "const graph_attrs&";
+            sep = ", ";
         }
-        const auto fill_out_pattern_nodes_label_map = oss.str();
-
-        oss.str("");
-        const auto fill_out_pattern_nodes = oss.str();
+        oss << ")>>{};";
+        const auto define_pattern_nodes_action_map = oss.str();
 
         constexpr auto fill_out_anc_desc =
             "for (const auto [edge, edge_value_index] : pattern_edges_map) {"
@@ -469,7 +480,7 @@ public:
             "            if (mat[ip_].contains(i1)) {"
             "                mat[ip_].erase(i1);"
             "                if (mat[ip_].empty())"
-            "                    return std::set<std::tuple<size_t, size_t>>{};"
+            "                    return {};"
             "                for (const auto &[edge, value_index] : pattern_edges_map) {"
             "                    if (std::get<1>(edge) != ip_)"
             "                        continue;"
@@ -540,16 +551,46 @@ public:
             "    }"
             "}"sv;
 
-        constexpr auto relation_and_return =
-            "auto S = std::set<std::tuple<size_t, size_t>>{};"
-            "for (size_t ip = 0; ip < pattern_size; ++ip) {"
-            "    const auto &mat_u_range = mat[ip];"
-            "    for (const auto i : mat_u_range) {"
-            "        S.emplace(ip, i);"
-            "    }"
-            "}"
-            "return S;"
-            ""sv;
+        // constexpr auto relation_and_return =
+        //     "auto S = std::set<std::tuple<size_t, size_t, std::any>, cpp2::less>{};"
+        //     "for (size_t ip = 0; ip < pattern_size; ++ip) {"
+        //     "    const auto &mat_u_range = mat[ip];"
+        //     "    for (const auto i : mat_u_range) {"
+        //     "        if ("
+        //     "            const auto it = pattern_nodes_action_map.find(ip);"
+        //     "            it != pattern_nodes_action_map.end()"
+        //     "        ) {"
+        //     "            S.emplace(ip, i, it->second(get_attrs(g, i)));"
+        //     "        } else {"
+        //     "            S.emplace(ip, i, std::any{});"
+        //     "        }"
+        //     "    }"
+        //     "}"
+        //     "return S;"
+        //     ""sv;
+        oss.str("");
+        oss << "auto S = std::set<std::tuple<size_t, size_t, std::any>, cpp2::less>{};"
+               "for (size_t ip = 0; ip < pattern_size; ++ip) {"
+               "    const auto &mat_u_range = mat[ip];"
+               "    for (const auto i : mat_u_range) {"
+               "        if ("
+               "            const auto it = pattern_nodes_action_map.find(ip);"
+               "            it != pattern_nodes_action_map.end()"
+               "        ) {"
+               "            S.emplace(ip, i, it->second(";
+        sep = "";
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            oss << sep << "get_attrs(g, *mat[" << i << "].begin())";
+            sep = ", ";
+        }
+        oss << "            ));"
+               "        } else {"
+               "            S.emplace(ip, i, std::any{});"
+               "        }"
+               "    }"
+               "}"
+               "return S;";
+        const auto relation_and_return = oss.str();
 
         constexpr auto end_of_lambda =
             "}"
@@ -563,54 +604,64 @@ public:
                 << define_anc_desc << define_mat_premv
                 << define_graph_size << define_pattern_size
                 << define_pattern_edges_map << fill_out_edges_map
-                << define_pattern_nodes;
+                << define_pattern_nodes
+                << define_pattern_nodes_action_map;
             print_f(oss.str());
         };
 
         auto do_phase2 = [&] {
-            oss.str("");
-            // oss << fill_out_pattern_nodes;
+            auto curr_idx = size_t{};
             for (const auto &n : nodes) {
-                // oss << "pattern_nodes.push_back({{";
                 print_f("pattern_nodes.push_back({std::vector<size_t>{");
                 const char *sep = "";
                 for (const auto adj : n.adj_nodes) {
-                    // oss << sep << std::to_string(adj);
                     print_f(sep);
                     print_f(std::to_string(adj));
                     sep = ", ";
                 }
-                // oss << "}, {" << (n.attrs ? std::to_string(*n.attrs) : ""s) << "}});";
-                // oss << "}, " << (
-                //     n.pred ?
-                //         "[] (graph_attrs const& "s + *n.label + ") { return "s
-                //             + std::to_string(*n.pred) + "; }"s
-                //         : "[] (graph_attrs const&){ return true; }"s
-                // ) << "});";
                 print_f("}, graph_attrs_pred{");
                 if (n.pred) {
-                    print_f("[=] (graph_attrs const& ");
-                    print_f(*n.label);
-                    print_f(") { return ");
+                    print_f("[=] (graph_attrs const& "s + *n.label + ") { return ");
                     emit_loen_f(*n.pred);
                     print_f("; }");
                 } else if (n.func) {
                     print_f("[] (graph_attrs const &"s + *n.label + ")"s);
                     emit_csn_f(*n.func);
-                    // emit_dn_f(*n.func);
-                    // print_f("{ return true; }");
                 } else {
                     print_f("[] (graph_attrs const&){ return true; }");
                 }
                 print_f("}});");
+
+                ++curr_idx;
+                if (n.action) {
+                    // pattern_nodes_action_map.insert(
+                    //     {3, [](graph_attrs const &_0, graph_attrs const &_1,
+                    //            graph_attrs const &_3, graph_attrs const &_2) { return _2; }});                    
+                    print_f(
+                        "pattern_nodes_action_map.insert({"s
+                        + std::to_string(curr_idx - 1)
+                        + ", [] ("
+                    );
+                    const char *sep = "";
+                    for (const auto &n : nodes) {
+                        print_f(sep);
+                        print_f(
+                            "const graph_attrs &"s
+                            + *n.label
+                        );
+                        sep = ", ";
+                    }
+                    print_f(")");
+                    emit_csn_f(*n.action);
+                    print_f("});");
+                    // pattern_nodes_action_map.insert({2, [](const auto& _2) { return _2; }});
+                }
             }
         };
 
         auto do_phase3 = [&] {
             oss.str("");
-            oss << define_pattern_nodes_label_map
-                << fill_out_pattern_nodes_label_map
-                << fill_out_anc_desc
+            oss << fill_out_anc_desc
                 << fill_out_mat_premv
                 << main_loop_condition_function << main_loop
                 << filter_mat_for_index_constraints

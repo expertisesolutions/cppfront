@@ -1944,6 +1944,7 @@ using cpp2::cpp2_new;
     #define CPP2_REQUIRES_(...) requires (__VA_ARGS__)
 #endif
 
+#include <any>
 #include <map>
 #include <queue>
 #include <set>
@@ -1951,7 +1952,30 @@ using cpp2::cpp2_new;
 #include <type_traits>
 #include <vector>
 
+auto operator<=>(const std::any& lhs, const std::any& rhs) {
+    return lhs.type().hash_code() <=> rhs.type().hash_code();
+}
+
+auto operator<=>(
+    const std::tuple<size_t, size_t, std::any> &lhs,
+    const std::tuple<size_t, size_t, std::any> &rhs
+) {
+    auto const [lhs0, lhs1, lhs2] = lhs;
+    auto const [rhs0, rhs1, rhs2] = rhs;
+    auto const cmp = std::make_tuple(lhs0, lhs1) <=> std::make_tuple(rhs0, rhs1);
+    return cmp != std::strong_ordering::equal ?
+        cmp : lhs2 <=> rhs2;
+}
+
 namespace cpp2 {
+
+struct less {
+    template <typename T>
+    bool operator()(T const& lhs, T const& rhs) const {
+        return (lhs <=> rhs) == std::strong_ordering::less;
+    }
+};
+
 template<typename G>
 concept Graph = requires(G g)
 {
