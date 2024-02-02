@@ -2,6 +2,7 @@
 struct my_graph {
     struct node {
         std::vector<size_t> adj_list;
+        std::vector<size_t> inv_adj_list;
         std::set<std::string> attrs;
     };
 
@@ -19,11 +20,11 @@ struct my_graph {
     std::vector<node> nodes;
 
     void add_node(std::set<std::string>&& s) {
-        nodes.push_back({{}, std::move(s)});
+        nodes.push_back({{}, {}, std::move(s)});
     }
 
     void add_node(std::set<std::string> const& s) {
-        nodes.push_back({{}, s});
+        nodes.push_back({{}, {}, s});
     }
 
     void add_edge(size_t source, size_t sink) {
@@ -31,6 +32,7 @@ struct my_graph {
         // assert (sink < nodes.size());
 
         nodes[source].adj_list.push_back(sink);
+        nodes[sink].inv_adj_list.push_back(source);
     }
 };
 
@@ -42,6 +44,12 @@ get_adj_list: (forward g: my_graph, in i: size_t) -> forward const std::vector<s
     assert<Bounds>(i < get_size(g));
 
     return g.nodes[i].adj_list;
+}
+
+get_inv_adj_list: (forward g: my_graph, in i: size_t) -> forward const std::vector<size_t> = {
+    assert<Bounds>(i < get_size(g));
+
+    return g.nodes[i].inv_adj_list;
 }
 
 get_attrs: (forward g: my_graph, in i: size_t) -> forward const std::set<std::string> = {
@@ -85,14 +93,4 @@ main: () -> int = {
     g.add_edge(5, 0);
 
     rel := m(g);
-
-    for rel do (p)
-        std::cout << std::get<0>(p) << ", " << std::get<1>(p) << "\n";
-    // 0, 0
-    // 1, 2
-    // 1, 3
-    // 2, 4
-    // 2, 5
-    // 3, 1
-    // 3, 3
 }
