@@ -1758,9 +1758,6 @@ struct match_node_node
         if (action) {
             action->visit(v, depth + 1);
         }
-        // if (decl) {
-        //     decl->visit(v, depth + 1);
-        // }
         v.end(*this, depth);
     }
 };
@@ -1773,7 +1770,6 @@ struct match_edge_attrs_node
     source_position open_brace;
     source_position close_brace;
     token const* lhs_attrs = nullptr;
-    // token const* rhs_attrs = nullptr;
 
     match_edge_attrs_node(
         source_position o = {},
@@ -1913,12 +1909,14 @@ struct match_statement_node
     source_position open_brace;
     source_position close_brace;
     std::unique_ptr<match_compound_expression_node> match_stmts = {};
+    statement_node* parent_stmt = nullptr;
 
     match_statement_node(
+        statement_node *sn,
         source_position o = {},
         source_position c = {}
     )
-        : open_brace{o}, close_brace{c}
+        : parent_stmt{sn}, open_brace{o}, close_brace{c}
     { }
 
     auto position() const
@@ -7034,7 +7032,7 @@ public:
 
     //G match-statement:
     //G     'match' match-compound-statement
-    auto match_statement()
+    auto match_statement(statement_node *my_stmt = nullptr)
         -> std::unique_ptr<match_statement_node>
     {
         if (
@@ -7043,7 +7041,7 @@ public:
         ) {
             return {};
         }
-        auto n = std::make_unique<match_statement_node>();
+        auto n = std::make_unique<match_statement_node>(my_stmt);
         n->identifier = &curr();
         next();
 
@@ -7601,7 +7599,7 @@ private:
             return n;
         }
 
-        else if (auto m = match_statement()) {
+        else if (auto m = match_statement(n.get())) {
             n->statement = std::move(m);
             assert (n->is_match());
             return n;

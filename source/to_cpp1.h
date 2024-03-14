@@ -2253,7 +2253,7 @@ public:
         //
         if (n.expression)
         {
-            assert(!current_functions.empty());
+            assert(!current_functions.empty() || !current_matches.empty());
             auto is_forward_return =
                 !function_returns.empty()
                 && function_returns.back().pass == passing_style::forward;
@@ -2323,8 +2323,11 @@ public:
             }
 
             if (
-                function_returns.empty()
-                || function_returns.back().param_list != &single_anon
+                current_matches.empty()
+                && (
+                    function_returns.empty()
+                    || function_returns.back().param_list != &single_anon
+                    )
                 )
             {
                 errors.emplace_back(
@@ -2336,8 +2339,11 @@ public:
         }
 
         else if (
-            !function_returns.empty()
-            && function_returns.back().param_list == &single_anon
+            current_matches.empty()
+            && (
+                !function_returns.empty()
+                && function_returns.back().param_list == &single_anon
+                )
             )
         {
             errors.emplace_back(
@@ -3779,12 +3785,14 @@ public:
         }
     }
 
-
+    std::vector<match_statement_node const*> current_matches;
     //-----------------------------------------------------------------------
     //
     auto emit(match_statement_node const& n)
         -> void
     {
+        current_matches.push_back(&n);
+        auto fn = finally([&] { current_matches.pop_back(); });
         if (!sema.check(n)) {
             return;
         }
@@ -3822,9 +3830,9 @@ public:
             function_prolog{},
             std::vector<std::string>{}
         );
-        mg.generate(print_f, emit_f1, emit_f2);
+        // mg.generate(print_f, emit_f1, emit_f2, current_functions.empty());
+        mg.generate2(print_f, emit_f1, emit_f2, current_functions.empty());
     }
-
 
     //-----------------------------------------------------------------------
     //
@@ -6135,6 +6143,11 @@ public:
                     && printer.get_phase() == printer.phase2_func_defs
                     )
                 )
+                ||
+                (
+                    n.parent_is_object()
+                    && printer.get_phase() == printer.phase2_func_defs
+                    )
             )
         {
             auto& type = std::get<declaration_node::an_object>(n.type);
